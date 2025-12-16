@@ -84,6 +84,14 @@ class ModalBackend(TranscriptionBackend):
         """Check if Modal SDK is authenticated."""
         if not MODAL_SDK_AVAILABLE:
             return False
+        
+        # Fix whitespace in Modal tokens from Secret Manager
+        token_id = os.getenv('MODAL_TOKEN_ID', '').strip()
+        token_secret = os.getenv('MODAL_TOKEN_SECRET', '').strip()
+        if token_id and token_secret:
+            os.environ['MODAL_TOKEN_ID'] = token_id
+            os.environ['MODAL_TOKEN_SECRET'] = token_secret
+        
         try:
             from modal.config import Config as ModalConfig
             config = ModalConfig()
