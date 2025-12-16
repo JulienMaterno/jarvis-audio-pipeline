@@ -29,6 +29,7 @@ class GoogleDriveMonitor:
     def _authenticate(self):
         """Authenticate with Google Drive API using Secret Manager (cloud) or files (local)."""
         creds = None
+        token_file = None  # Track whether we're using file-based auth
         
         # Check if running in cloud with secrets (Secret Manager)
         token_json = os.getenv('GOOGLE_TOKEN_JSON')
@@ -61,18 +62,25 @@ class GoogleDriveMonitor:
                     logger.info("Refreshed expired Google Drive token")
                 except Exception as e:
                     logger.warning(f"Token refresh failed: {e}. Need to re-authenticate.")
-                    # Token refresh failed, need manual re-auth
+                    # Token refresh failed, need manual re-auth (only works locally)
+                    if token_file:
+                        flow = InstalledAppFlow.from_client_secrets_file(
+                            str(credentials_path), SCOPES)
+                        creds = flow.run_local_server(port=0)
+                    else:
+                        raise Exception("Token expired and cannot refresh in cloud mode")
+            else:
+                if token_file:
                     flow = InstalledAppFlow.from_client_secrets_file(
                         str(credentials_path), SCOPES)
                     creds = flow.run_local_server(port=0)
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    str(credentials_path), SCOPES)
-                creds = flow.run_local_server(port=0)
+                else:
+                    raise Exception("No valid credentials available")
             
-            # Save credentials for next run
-            with open(token_file, 'w') as token:
-                token.write(creds.to_json())
+            # Save credentials for next run (only for file-based auth)
+            if token_file:
+                with open(token_file, 'w') as token:
+                    token.write(creds.to_json())
         
         self.service = build('drive', 'v3', credentials=creds)
         logger.info("Authenticated with Google Drive")
