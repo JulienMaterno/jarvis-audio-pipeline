@@ -203,7 +203,7 @@ async def renew_webhook():
         service = build('drive', 'v3', credentials=creds)
         
         # Get folder ID
-        folder_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
+        folder_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID', '').strip()
         if not folder_id:
             raise Exception("GOOGLE_DRIVE_FOLDER_ID not set")
         
