@@ -12,6 +12,7 @@ modal>=0.63.0
 
 # Database
 supabase>=2.0.0
+notion-client==2.2.1  # Legacy - still imported in code
 
 # Utilities
 python-dotenv==1.0.0
