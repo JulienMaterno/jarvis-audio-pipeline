@@ -1,0 +1,48 @@
+# Environment variables
+.env
+.env.local
+.env.production
+!.env.example
+
+# Google Drive credentials
+data/credentials.json
+data/token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Audio files (temp)
+temp/
+*.mp3
+*.m4a
+*.wav
+*.ogg
+*.flac
+
+# Transcripts (stored locally, not in git)
+Transcripts/
+
+# Logs
+airflow/logs/
+airflow-logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Archive (old code)
+archive/

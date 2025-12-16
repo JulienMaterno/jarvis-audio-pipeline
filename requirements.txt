@@ -1,0 +1,19 @@
+google-api-python-client==2.108.0
+google-auth-httplib2==0.1.1
+google-auth-oauthlib==1.1.0
+numpy<2.0  # Required for pyarrow/sklearn compatibility
+whisperx>=3.1.1
+torch==2.4.1  # Pinned for pyannote.audio 3.3.2 compatibility (2.9.x breaks AudioMetaData)
+torchaudio==2.4.1  # Must match torch version
+pyannote.audio==3.3.2  # Required by whisperx, needs torchaudio <2.5
+# resemblyzer>=0.1.1  # Temporarily disabled - requires C compiler for webrtcvad
+anthropic>=0.73.0
+notion-client==2.2.1
+supabase>=2.0.0
+python-dotenv==1.0.0
+pydub==0.25.1
+ffmpeg-python==0.2.0
+requests>=2.31.0
+flask==2.2.5  # Airflow 2.8.0 requires Flask 2.2.x specifically
+werkzeug==2.2.2  # Compatible with Flask 2.2.5
+apscheduler>=3.10.0
