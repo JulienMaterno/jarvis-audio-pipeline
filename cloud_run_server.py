@@ -2,15 +2,19 @@
 Cloud Run HTTP wrapper for Jarvis Audio Pipeline.
 Exposes the pipeline as an HTTP API - triggered by Cloud Scheduler.
 Uses min-instances=0 for cost efficiency.
+
+Supports async processing for large files (2+ hours) via BackgroundTasks.
 """
 
 import os
 import logging
 import hmac
 import hashlib
-from fastapi import FastAPI, HTTPException, Request, Header
+import asyncio
+from fastapi import FastAPI, HTTPException, Request, Header, BackgroundTasks
 from contextlib import asynccontextmanager
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +29,29 @@ logging.getLogger('anthropic').setLevel(logging.WARNING)
 
 # Global pipeline instance
 pipeline = None
+
+# Thread pool for background processing
+executor = ThreadPoolExecutor(max_workers=2)
+
+# Track processing state
+processing_lock = asyncio.Lock()
+is_processing = False
+
+
+def run_pipeline_sync():
+    """Run pipeline synchronously (for background thread)."""
+    global pipeline, is_processing
+    try:
+        is_processing = True
+        logger.info("Background processing started")
+        count = pipeline.run_all()
+        logger.info(f"Background processing complete: {count} file(s)")
+        return count
+    except Exception as e:
+        logger.error(f"Background processing error: {e}", exc_info=True)
+        return 0
+    finally:
+        is_processing = False
 
 
 @asynccontextmanager
@@ -63,33 +90,57 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check for Cloud Run."""
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "processing": is_processing
+    }
 
 
 @app.post("/process")
-async def process_files():
+async def process_files(background: bool = False):
     """
     Process all available audio files in Google Drive.
     Called by Cloud Scheduler every 5 minutes.
+    
+    Args:
+        background: If True, process asynchronously and return immediately.
+                   Recommended for large files (2+ hours).
     """
-    global pipeline
+    global pipeline, is_processing
     
     if pipeline is None:
         raise HTTPException(status_code=500, detail="Pipeline not initialized")
     
-    try:
-        logger.info("Processing request received")
-        
-        # Process all available files
-        processed_count = pipeline.run_all()
-        
-        logger.info(f"Processed {processed_count} file(s)")
-        
+    if is_processing:
         return {
-            "status": "success",
-            "files_processed": processed_count,
-            "message": f"Processed {processed_count} file(s)"
+            "status": "already_processing",
+            "message": "Processing already in progress"
         }
+    
+    try:
+        logger.info(f"Processing request received (background={background})")
+        
+        if background:
+            # Run in background thread - return immediately
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(executor, run_pipeline_sync)
+            
+            return {
+                "status": "accepted",
+                "message": "Processing started in background",
+                "background": True
+            }
+        else:
+            # Synchronous processing (for short files)
+            processed_count = pipeline.run_all()
+            
+            logger.info(f"Processed {processed_count} file(s)")
+            
+            return {
+                "status": "success",
+                "files_processed": processed_count,
+                "message": f"Processed {processed_count} file(s)"
+            }
         
     except Exception as e:
         logger.error(f"Processing error: {e}", exc_info=True)
@@ -133,13 +184,16 @@ async def drive_webhook(
     Webhook endpoint for Google Drive push notifications.
     Triggered when a new file is added to the monitored folder.
     
+    IMPORTANT: Returns immediately and processes in background.
+    This prevents timeout issues with Google's webhook (10-30s timeout).
+    
     Google Drive sends notifications with headers:
     - X-Goog-Channel-ID: The channel ID we specified when creating the watch
     - X-Goog-Resource-State: 'add', 'update', 'remove', 'trash', 'untrash', 'change'
     - X-Goog-Resource-ID: Google's resource identifier
     - X-Goog-Message-Number: Incremental message number
     """
-    global pipeline
+    global pipeline, is_processing
     
     if pipeline is None:
         raise HTTPException(status_code=500, detail="Pipeline not initialized")
@@ -153,19 +207,24 @@ async def drive_webhook(
         logger.info(f"Ignoring resource state: {x_goog_resource_state}")
         return {"status": "ignored", "reason": f"state={x_goog_resource_state}"}
     
+    # Skip if already processing
+    if is_processing:
+        logger.info("Already processing, skipping webhook trigger")
+        return {"status": "skipped", "reason": "already_processing"}
+    
     try:
-        # Process all files (webhook tells us something changed, but not specifically what)
-        # In future, could optimize to only process files modified after last check
-        logger.info("Processing files triggered by webhook")
-        processed_count = pipeline.run_all()
+        # Process in background - return immediately to Google
+        # This prevents webhook timeout (Google expects response in 10-30s)
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(executor, run_pipeline_sync)
         
-        logger.info(f"Webhook processing complete: {processed_count} file(s)")
+        logger.info("Webhook accepted, processing in background")
         
         return {
-            "status": "success",
-            "files_processed": processed_count,
+            "status": "accepted",
             "trigger": "webhook",
-            "resource_state": x_goog_resource_state
+            "resource_state": x_goog_resource_state,
+            "message": "Processing started in background"
         }
         
     except Exception as e:
@@ -173,12 +232,18 @@ async def drive_webhook(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/status")
+async def get_status():
+    """Get current processing status."""
+    return {
+        "status": "processing" if is_processing else "idle",
+        "processing": is_processing,
+        "pipeline_ready": pipeline is not None
+    }
+
+
 @app.post("/renew-webhook")
-async def renew_webhook():
-    """
-    Renew the Google Drive webhook registration.
-    Called by Cloud Scheduler once a week to prevent expiration.
-    """
+async def renew_webhook_handler():
     import json
     from datetime import datetime, timedelta
     from google.oauth2.credentials import Credentials

@@ -47,7 +47,7 @@ whisper_image = (
 @app.cls(
     image=whisper_image,
     gpu="T4",
-    timeout=3600,
+    timeout=7200,  # 2 hours - handles very long recordings
     volumes={MODEL_DIR: model_cache},
     secrets=[modal.Secret.from_name("huggingface-token")],
     scaledown_window=300,  # Keep container warm for 5 minutes
