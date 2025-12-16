@@ -14,6 +14,6 @@ python-dotenv==1.0.0
 pydub==0.25.1
 ffmpeg-python==0.2.0
 requests>=2.31.0
-flask==2.2.5  # Airflow 2.8.0 requires Flask 2.2.x specifically
-werkzeug==2.2.2  # Compatible with Flask 2.2.5
+fastapi>=0.109.0
+uvicorn>=0.27.0
 apscheduler>=3.10.0

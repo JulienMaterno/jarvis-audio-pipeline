@@ -1,12 +1,11 @@
 """
-Cloud Run HTTP wrapper for Jarvis Audio Pipeline.
-Exposes the pipeline as an HTTP API - triggered by Cloud Scheduler.
-Uses min-instances=0 for cost efficiency.
+Jarvis Audio Pipeline - Cloud Run HTTP Wrapper
+Exposes the pipeline as an HTTP API for Cloud Run + Cloud Scheduler.
 """
 
 import os
 import logging
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from contextlib import asynccontextmanager
 
 # Configure logging
@@ -20,6 +19,10 @@ logger = logging.getLogger('Jarvis.API')
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('anthropic').setLevel(logging.WARNING)
 
+# Import pipeline components
+from run_pipeline import AudioPipeline
+from src.config import Config
+
 # Global pipeline instance
 pipeline = None
 
@@ -28,18 +31,12 @@ pipeline = None
 async def lifespan(app: FastAPI):
     """Initialize pipeline on startup."""
     global pipeline
-    
-    # Import here to avoid issues during module load
-    from run_pipeline import AudioPipeline
-    from src.config import Config
-    
     try:
         Config.validate()
         pipeline = AudioPipeline()
         logger.info("Pipeline initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize pipeline: {e}")
-        raise
     yield
     logger.info("Shutting down")
 
@@ -53,7 +50,7 @@ app = FastAPI(
 
 @app.get("/")
 async def root():
-    """Root endpoint."""
+    """Health check endpoint."""
     return {"status": "Jarvis Audio Pipeline is running"}
 
 
@@ -67,7 +64,7 @@ async def health_check():
 async def process_files():
     """
     Process all available audio files in Google Drive.
-    Called by Cloud Scheduler every 5 minutes.
+    Called by Cloud Scheduler.
     """
     global pipeline
     
@@ -79,8 +76,6 @@ async def process_files():
         
         # Process all available files
         processed_count = pipeline.run_all()
-        
-        logger.info(f"Processed {processed_count} file(s)")
         
         return {
             "status": "success",
@@ -97,7 +92,6 @@ async def process_files():
 async def process_one_file():
     """
     Process a single audio file (if available).
-    Useful for testing.
     """
     global pipeline
     
