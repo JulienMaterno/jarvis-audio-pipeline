@@ -24,8 +24,8 @@ class Config:
     # =========================================================================
     GOOGLE_CREDENTIALS_FILE = str(PROJECT_ROOT / 'data' / os.getenv('GOOGLE_DRIVE_CREDENTIALS_FILE', 'credentials.json'))
     GOOGLE_TOKEN_FILE = str(PROJECT_ROOT / 'data' / 'token.json')
-    GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
-    GOOGLE_DRIVE_PROCESSED_FOLDER_ID = os.getenv('GOOGLE_DRIVE_PROCESSED_FOLDER_ID')
+    GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID', '').strip()
+    GOOGLE_DRIVE_PROCESSED_FOLDER_ID = os.getenv('GOOGLE_DRIVE_PROCESSED_FOLDER_ID', '').strip()
     
     # =========================================================================
     # CLAUDE API
