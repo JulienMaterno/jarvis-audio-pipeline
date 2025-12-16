@@ -8,6 +8,7 @@ google-auth-oauthlib==1.1.0
 
 # AI APIs
 anthropic>=0.73.0
+modal>=0.63.0
 
 # Database
 supabase>=2.0.0
