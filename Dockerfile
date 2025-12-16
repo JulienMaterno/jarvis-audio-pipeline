@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY src/ src/
 COPY run_pipeline.py .
+COPY cloud_run_server.py .
 COPY modal_whisperx.py .
 COPY modal_whisperx_v2.py .
 
@@ -23,6 +24,7 @@ RUN mkdir -p temp logs Transcripts
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PORT=8080
 
-# Run the pipeline in daemon mode (check every 5 minutes)
-CMD ["python", "run_pipeline.py", "--daemon", "--interval", "5"]
+# Run the HTTP wrapper (which runs pipeline in background)
+CMD ["python", "cloud_run_server.py"]

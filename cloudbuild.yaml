@@ -4,11 +4,11 @@
 steps:
   # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/jarvis-audio-pipeline:$COMMIT_SHA', '.']
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/jarvis-audio-pipeline:latest', '.']
 
   # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/jarvis-audio-pipeline:$COMMIT_SHA']
+    args: ['push', 'gcr.io/$PROJECT_ID/jarvis-audio-pipeline:latest']
 
   # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -18,9 +18,9 @@ steps:
       - 'deploy'
       - 'jarvis-audio-pipeline'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/jarvis-audio-pipeline:$COMMIT_SHA'
+      - 'gcr.io/$PROJECT_ID/jarvis-audio-pipeline:latest'
       - '--region'
-      - 'us-central1'
+      - 'asia-southeast1'
       - '--platform'
       - 'managed'
       - '--no-allow-unauthenticated'
@@ -38,7 +38,7 @@ steps:
       - 'SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,CLAUDE_API_KEY=CLAUDE_API_KEY:latest,GOOGLE_TOKEN_JSON=GOOGLE_TOKEN_JSON:latest,GOOGLE_DRIVE_FOLDER_ID=GOOGLE_DRIVE_FOLDER_ID:latest,GOOGLE_DRIVE_PROCESSED_FOLDER_ID=GOOGLE_DRIVE_PROCESSED_FOLDER_ID:latest,MODAL_TOKEN_ID=MODAL_TOKEN_ID:latest,MODAL_TOKEN_SECRET=MODAL_TOKEN_SECRET:latest'
 
 images:
-  - 'gcr.io/$PROJECT_ID/jarvis-audio-pipeline:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/jarvis-audio-pipeline:latest'
 
 options:
   logging: CLOUD_LOGGING_ONLY
