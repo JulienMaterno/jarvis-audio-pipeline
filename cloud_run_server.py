@@ -173,6 +173,88 @@ async def drive_webhook(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/renew-webhook")
+async def renew_webhook():
+    """
+    Renew the Google Drive webhook registration.
+    Called by Cloud Scheduler once a week to prevent expiration.
+    """
+    import json
+    from datetime import datetime, timedelta
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request as GoogleRequest
+    from googleapiclient.discovery import build
+    
+    try:
+        logger.info("Renewing Google Drive webhook...")
+        
+        # Load credentials
+        token_json = os.getenv('GOOGLE_TOKEN_JSON')
+        if not token_json:
+            raise Exception("GOOGLE_TOKEN_JSON not set")
+        
+        token_data = json.loads(token_json)
+        creds = Credentials.from_authorized_user_info(token_data)
+        
+        if creds.expired and creds.refresh_token:
+            creds.refresh(GoogleRequest())
+        
+        # Build Drive API client
+        service = build('drive', 'v3', credentials=creds)
+        
+        # Get folder ID
+        folder_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
+        if not folder_id:
+            raise Exception("GOOGLE_DRIVE_FOLDER_ID not set")
+        
+        # Get service URL
+        service_url = os.getenv('K_SERVICE', 'jarvis-audio-pipeline')
+        webhook_url = f"https://{service_url}-776871804948.asia-southeast1.run.app/webhook/drive"
+        
+        # Create watch with 7-day expiration
+        expiration_time = datetime.utcnow() + timedelta(days=7)
+        expiration_ms = int(expiration_time.timestamp() * 1000)
+        
+        body = {
+            'id': 'jarvis-audio-pipeline-webhook',
+            'type': 'web_hook',
+            'address': webhook_url,
+            'expiration': expiration_ms
+        }
+        
+        # Stop existing watch (may fail if already expired)
+        try:
+            service.channels().stop(
+                body={'id': 'jarvis-audio-pipeline-webhook', 'resourceId': 'placeholder'}
+            ).execute()
+            logger.info("Stopped existing watch")
+        except Exception:
+            pass  # OK if no existing watch
+        
+        # Create new watch
+        response = service.files().watch(
+            fileId=folder_id,
+            body=body,
+            supportsAllDrives=True
+        ).execute()
+        
+        exp_timestamp = int(response.get('expiration', 0)) / 1000
+        exp_datetime = datetime.fromtimestamp(exp_timestamp) if exp_timestamp > 0 else None
+        
+        logger.info(f"Webhook renewed! Expires: {exp_datetime}")
+        
+        return {
+            "status": "success",
+            "message": "Webhook renewed",
+            "resource_id": response.get('resourceId'),
+            "expiration": str(exp_datetime) if exp_datetime else None
+        }
+        
+    except Exception as e:
+        logger.error(f"Webhook renewal error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
