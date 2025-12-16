@@ -1,0 +1,25 @@
+# Cloud Run requirements (minimal - no local transcription)
+# Modal handles transcription, so no torch/whisperx needed
+
+# Google APIs
+google-api-python-client==2.108.0
+google-auth-httplib2==0.1.1
+google-auth-oauthlib==1.1.0
+
+# AI APIs
+anthropic>=0.73.0
+
+# Database
+supabase>=2.0.0
+
+# Utilities
+python-dotenv==1.0.0
+requests>=2.31.0
+
+# Web framework
+fastapi>=0.109.0
+uvicorn>=0.27.0
+
+# Optional (for future local processing)
+# pydub==0.25.1
+# ffmpeg-python==0.2.0
