@@ -70,13 +70,15 @@ def setup_watch(webhook_url: str, folder_id: str = None):
     print(f"Channel ID: {CHANNEL_ID}")
     
     # Create watch request
-    # Note: Watches expire after ~24 hours and need to be renewed
+    # Set expiration to 7 days (max allowed by Google Drive API)
+    expiration_time = datetime.utcnow() + timedelta(days=7)
+    expiration_ms = int(expiration_time.timestamp() * 1000)
+    
     body = {
         'id': CHANNEL_ID,
         'type': 'web_hook',
         'address': webhook_url,
-        # Optional: Add an expiration time (max ~1 week, but 24h is safer)
-        # 'expiration': int((datetime.utcnow() + timedelta(hours=24)).timestamp() * 1000)
+        'expiration': expiration_ms  # Max 7 days
     }
     
     try:
