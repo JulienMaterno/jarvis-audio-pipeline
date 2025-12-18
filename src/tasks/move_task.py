@@ -119,22 +119,44 @@ def move_to_processed(context: Dict[str, Any]) -> Dict[str, Any]:
         new_name = generate_new_filename(context)
         logger.info(f"Renaming: {original_name} → {new_name}")
         
-        # Move and rename file
-        gdrive.service.files().update(
-            fileId=file_id,
-            body={'name': new_name},
-            addParents=processed_folder_id,
-            removeParents=file_metadata.get('parents', [''])[0] if 'parents' in file_metadata else '',
-            fields='id, name, parents'
-        ).execute()
+        # Get the current parent folder
+        current_parents = file_metadata.get('parents', [])
+        if not current_parents:
+            # If no parents in metadata, fetch them
+            file_info = gdrive.service.files().get(
+                fileId=file_id,
+                fields='parents'
+            ).execute()
+            current_parents = file_info.get('parents', [])
         
-        logger.info(f"Moved and renamed to: {new_name}")
+        # Build update parameters
+        update_params = {
+            'fileId': file_id,
+            'body': {'name': new_name},
+            'fields': 'id, name, parents'
+        }
+        
+        # Only add parent move parameters if we have a current parent
+        if current_parents:
+            update_params['addParents'] = processed_folder_id
+            update_params['removeParents'] = current_parents[0]
+        else:
+            # If no parents, just rename without moving
+            logger.warning("No parent folders found, will rename without moving")
+        
+        # Move and rename file
+        gdrive.service.files().update(**update_params).execute()
+        
+        if current_parents:
+            logger.info(f"Moved and renamed to: {new_name}")
+        else:
+            logger.info(f"Renamed to: {new_name} (not moved)")
         
         return {
-            'moved': True,
+            'moved': bool(current_parents),
             'original_name': original_name,
             'new_name': new_name,
-            'new_location': 'Processed Audiofiles'
+            'new_location': 'Processed Audiofiles' if current_parents else 'Same folder'
         }
         
     except Exception as e:

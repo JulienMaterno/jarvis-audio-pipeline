@@ -91,7 +91,7 @@ class GoogleDriveMonitor:
             results = self.service.files().list(
                 q=query,
                 spaces='drive',
-                fields='files(id, name, mimeType, modifiedTime, size)',
+                fields='files(id, name, mimeType, modifiedTime, size, parents)',
                 orderBy='modifiedTime desc',
                 pageSize=min(max_results, 100)  # Limit results to prevent long API calls
             ).execute()
