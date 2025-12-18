@@ -5,7 +5,10 @@ Exposes the pipeline as an HTTP API for Cloud Run + Cloud Scheduler.
 
 import os
 import logging
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+import tempfile
+from pathlib import Path
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 # Configure logging
@@ -138,6 +141,110 @@ async def drive_webhook(request: dict = None):
         
     except Exception as e:
         logger.error(f"Webhook processing error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/process/upload")
+async def process_uploaded_file(
+    file: UploadFile = File(...),
+    username: str = Form(default="unknown")
+):
+    """
+    Process an uploaded audio file directly (no Google Drive).
+    Returns detailed results about what was created.
+    
+    Used by Telegram bot for instant processing with feedback.
+    """
+    global pipeline
+    
+    if pipeline is None:
+        raise HTTPException(status_code=500, detail="Pipeline not initialized")
+    
+    try:
+        logger.info(f"Direct upload received: {file.filename} from {username}")
+        
+        # Save uploaded file to temp directory
+        temp_dir = Path(Config.TEMP_AUDIO_DIR)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        temp_path = temp_dir / file.filename
+        
+        # Write file to disk
+        content = await file.read()
+        with open(temp_path, 'wb') as f:
+            f.write(content)
+        
+        logger.info(f"Saved to temp: {temp_path} ({len(content)} bytes)")
+        
+        # Create fake file metadata (as if from Google Drive)
+        file_metadata = {
+            'id': f'direct_upload_{file.filename}',
+            'name': file.filename,
+            'mimeType': file.content_type or 'audio/ogg',
+            'size': len(content),
+            'modifiedTime': None,
+            'parents': []
+        }
+        
+        # Process the file directly
+        result = pipeline.process_file_direct(file_metadata, temp_path)
+        
+        # Clean up temp file
+        if temp_path.exists():
+            temp_path.unlink()
+        
+        if result.get('success'):
+            # Build a human-readable summary
+            analysis = result.get('analysis', {})
+            category = analysis.get('primary_category', 'recording')
+            
+            summary_parts = []
+            
+            # Describe what was created
+            meetings = analysis.get('meetings', [])
+            reflections = analysis.get('reflections', [])
+            tasks = analysis.get('tasks', [])
+            
+            if meetings:
+                for m in meetings:
+                    title = m.get('title', 'Untitled')
+                    person = m.get('person_name', '')
+                    if person:
+                        summary_parts.append(f"📅 Meeting: {title} with {person}")
+                    else:
+                        summary_parts.append(f"📅 Meeting: {title}")
+            
+            if reflections:
+                for r in reflections:
+                    title = r.get('title', 'Untitled')
+                    summary_parts.append(f"💭 Reflection: {title}")
+            
+            if tasks:
+                for t in tasks:
+                    title = t.get('title', 'Untitled')
+                    summary_parts.append(f"✅ Task: {title}")
+            
+            return {
+                "status": "success",
+                "category": category,
+                "summary": "\n".join(summary_parts) if summary_parts else f"Processed as {category}",
+                "details": {
+                    "meetings_created": len(meetings),
+                    "reflections_created": len(reflections),
+                    "tasks_created": len(tasks),
+                    "transcript_id": result.get('transcript_id'),
+                    "transcript_length": result.get('transcript_length', 0)
+                }
+            }
+        else:
+            return {
+                "status": "error",
+                "error": result.get('error', 'Unknown error'),
+                "summary": "Failed to process audio"
+            }
+        
+    except Exception as e:
+        logger.error(f"Direct upload processing error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

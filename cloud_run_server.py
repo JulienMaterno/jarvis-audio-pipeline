@@ -201,9 +201,10 @@ async def drive_webhook(
     # Log the notification
     logger.info(f"Drive webhook received: state={x_goog_resource_state}, channel={x_goog_channel_id}, msg={x_goog_message_number}")
     
-    # Only process on 'add' or 'change' events (new file uploaded)
+    # Only process on file change events (new file uploaded or modified)
     # Note: Google Drive sends 'sync' on initial webhook setup - ignore it
-    if x_goog_resource_state not in ['add', 'change']:
+    # States: 'add', 'change', 'update' = file events; 'sync' = setup; 'remove'/'trash' = deletions
+    if x_goog_resource_state not in ['add', 'change', 'update']:
         logger.info(f"Ignoring resource state: {x_goog_resource_state}")
         return {"status": "ignored", "reason": f"state={x_goog_resource_state}"}
     
@@ -245,6 +246,7 @@ async def get_status():
 @app.post("/renew-webhook")
 async def renew_webhook_handler():
     import json
+    import uuid
     from datetime import datetime, timedelta
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request as GoogleRequest
@@ -272,31 +274,20 @@ async def renew_webhook_handler():
         if not folder_id:
             raise Exception("GOOGLE_DRIVE_FOLDER_ID not set")
         
-        # Get service URL
-        service_url = os.getenv('K_SERVICE', 'jarvis-audio-pipeline')
-        webhook_url = f"https://{service_url}-776871804948.asia-southeast1.run.app/webhook/drive"
+        # Get service URL - use the actual Cloud Run URL
+        webhook_url = "https://jarvis-audio-pipeline-qkz4et4n4q-as.a.run.app/webhook/drive"
         
-        # Create watch with 7-day expiration
-        expiration_time = datetime.utcnow() + timedelta(days=7)
-        expiration_ms = int(expiration_time.timestamp() * 1000)
+        # Create watch - use unique channel ID with timestamp to avoid conflicts
+        # Previous watches auto-expire after 24h, so using unique ID each time is fine
+        channel_id = f"jarvis-audio-{uuid.uuid4().hex[:8]}"
         
         body = {
-            'id': 'jarvis-audio-pipeline-webhook',
+            'id': channel_id,
             'type': 'web_hook',
-            'address': webhook_url,
-            'expiration': expiration_ms
+            'address': webhook_url
         }
         
-        # Stop existing watch (may fail if already expired)
-        try:
-            service.channels().stop(
-                body={'id': 'jarvis-audio-pipeline-webhook', 'resourceId': 'placeholder'}
-            ).execute()
-            logger.info("Stopped existing watch")
-        except Exception:
-            pass  # OK if no existing watch
-        
-        # Create new watch
+        # Create new watch (old watches auto-expire after 24h)
         response = service.files().watch(
             fileId=folder_id,
             body=body,
@@ -306,11 +297,12 @@ async def renew_webhook_handler():
         exp_timestamp = int(response.get('expiration', 0)) / 1000
         exp_datetime = datetime.fromtimestamp(exp_timestamp) if exp_timestamp > 0 else None
         
-        logger.info(f"Webhook renewed! Expires: {exp_datetime}")
+        logger.info(f"Webhook renewed! Channel: {channel_id}, Expires: {exp_datetime}")
         
         return {
             "status": "success",
             "message": "Webhook renewed",
+            "channel_id": channel_id,
             "resource_id": response.get('resourceId'),
             "expiration": str(exp_datetime) if exp_datetime else None
         }

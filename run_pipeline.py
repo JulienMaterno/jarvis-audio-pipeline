@@ -36,8 +36,6 @@ from src.tasks import (
     move_to_processed,
     cleanup_temp_files
 )
-from src.tasks.supabase_task import save_to_supabase
-from src.tasks.save_transcript_task import save_transcript
 
 # Configure logging
 logging.basicConfig(
@@ -130,7 +128,7 @@ class AudioPipeline:
             
             # Step 3: Analyze
             step_start = time.time()
-            logger.info("Step 3/5: Analyzing with Claude...")
+            logger.info("Step 3/5: Saving & Analyzing with Intelligence Service...")
             analyze_result = analyze_transcript_multi(context)
             context['task_results']['analyze_transcript_multi'] = analyze_result
             
@@ -143,25 +141,9 @@ class AudioPipeline:
                 duration_ms=int((time.time() - step_start) * 1000)
             )
             logger.info(f"  ✓ Category: {analyze_result.get('primary_category')}")
+            logger.info(f"  ✓ Saved: {len(analyze_result.get('meeting_ids', []))} meetings, {len(analyze_result.get('reflection_ids', []))} reflections")
             
-            # Step 4: Save to Supabase
-            step_start = time.time()
-            logger.info("Step 4/5: Saving to Supabase...")
-            save_result = save_to_supabase(context)
-            context['task_results']['save_to_supabase'] = save_result
-            
-            if save_result.get('save_success'):
-                logger.info(f"  ✓ Saved: {len(save_result.get('meeting_ids', []))} meetings, {len(save_result.get('reflection_ids', []))} reflections")
-            else:
-                logger.error("  ✗ Save failed!")
-                raise Exception("Failed to save to Supabase")
-            
-            # Step 5: Save transcript file locally (optional but useful)
-            logger.info("Step 5/5: Saving transcript file...")
-            save_transcript(context)
-            logger.info(f"  ✓ Transcript saved locally")
-            
-            # Step 6: Move to processed folder & cleanup
+            # Step 4: Move to processed folder & cleanup
             logger.info("Cleaning up...")
             move_to_processed(context)
             cleanup_temp_files(context)
@@ -177,10 +159,10 @@ class AudioPipeline:
                 source_file=file_name,
                 duration_ms=int(total_time * 1000),
                 details={
-                    'transcript_id': save_result.get('transcript_id'),
-                    'meeting_ids': save_result.get('meeting_ids', []),
-                    'reflection_ids': save_result.get('reflection_ids', []),
-                    'task_ids': save_result.get('task_ids', [])
+                    'transcript_id': analyze_result.get('transcript_id'),
+                    'meeting_ids': analyze_result.get('meeting_ids', []),
+                    'reflection_ids': analyze_result.get('reflection_ids', []),
+                    'task_ids': analyze_result.get('task_ids', [])
                 }
             )
             
@@ -208,6 +190,143 @@ class AudioPipeline:
                 pass
             
             return False
+    
+    def process_file_direct(self, file_metadata: dict, local_path) -> dict:
+        """
+        Process a file that's already downloaded (direct upload, no Google Drive).
+        Returns detailed results for API response.
+        
+        Args:
+            file_metadata: Dict with file info (name, mimeType, size, etc.)
+            local_path: Path to the local audio file
+        
+        Returns:
+            Dict with success status, analysis results, and any errors
+        """
+        from pathlib import Path
+        run_id = str(uuid.uuid4())
+        file_name = file_metadata.get('name', 'unknown')
+        start_time = time.time()
+        
+        logger.info(f"{'='*60}")
+        logger.info(f"Processing (direct): {file_name}")
+        logger.info(f"Run ID: {run_id}")
+        logger.info(f"{'='*60}")
+        
+        # Log pipeline start
+        self.db.log_pipeline_event(
+            run_id=run_id,
+            event_type='pipeline_start',
+            status='started',
+            message=f'Starting direct pipeline for {file_name}',
+            source_file=file_name
+        )
+        
+        # Context with pre-downloaded file
+        context = {
+            'run_id': run_id,
+            'task_results': {
+                'monitor_google_drive': {
+                    'file_found': True,
+                    'file_metadata': file_metadata
+                },
+                'download_audio_file': {
+                    'local_path': str(local_path),
+                    'file_name': file_name,
+                    'file_size': file_metadata.get('size', 0)
+                }
+            }
+        }
+        
+        try:
+            # Step 1: Transcribe (skip download - file already local)
+            step_start = time.time()
+            logger.info("Step 1/3: Transcribing audio...")
+            transcribe_result = transcribe_audio(context)
+            context['task_results']['transcribe_audio'] = transcribe_result
+            
+            self.db.log_pipeline_event(
+                run_id=run_id,
+                event_type='transcribe',
+                status='success',
+                message=f"Transcribed: {transcribe_result.get('duration', 0):.0f}s audio → {len(transcribe_result.get('text', ''))} chars",
+                source_file=file_name,
+                duration_ms=int((time.time() - step_start) * 1000)
+            )
+            logger.info(f"  ✓ Transcribed: {len(transcribe_result.get('text', ''))} characters")
+            
+            # Step 2: Analyze
+            step_start = time.time()
+            logger.info("Step 2/3: Saving & Analyzing with Intelligence Service...")
+            analyze_result = analyze_transcript_multi(context)
+            context['task_results']['analyze_transcript_multi'] = analyze_result
+            
+            self.db.log_pipeline_event(
+                run_id=run_id,
+                event_type='analyze',
+                status='success',
+                message=f"Category: {analyze_result.get('primary_category')}, Meetings: {len(analyze_result.get('meetings', []))}, Reflections: {len(analyze_result.get('reflections', []))}",
+                source_file=file_name,
+                duration_ms=int((time.time() - step_start) * 1000)
+            )
+            logger.info(f"  ✓ Category: {analyze_result.get('primary_category')}")
+            logger.info(f"  ✓ Saved: {len(analyze_result.get('meeting_ids', []))} meetings, {len(analyze_result.get('reflection_ids', []))} reflections")
+            
+            # Step 3: Cleanup (no move needed - wasn't in Google Drive)
+            logger.info("Step 3/3: Cleaning up...")
+            cleanup_temp_files(context)
+            logger.info("  ✓ Cleanup complete")
+            
+            # Log success
+            total_time = time.time() - start_time
+            self.db.log_pipeline_event(
+                run_id=run_id,
+                event_type='pipeline_complete',
+                status='success',
+                message=f'Direct pipeline completed in {total_time:.1f}s',
+                source_file=file_name,
+                duration_ms=int(total_time * 1000),
+                details={
+                    'transcript_id': analyze_result.get('transcript_id'),
+                    'meeting_ids': analyze_result.get('meeting_ids', []),
+                    'reflection_ids': analyze_result.get('reflection_ids', []),
+                    'task_ids': analyze_result.get('task_ids', [])
+                }
+            )
+            
+            logger.info(f"{'='*60}")
+            logger.info(f"✓ COMPLETE in {total_time:.1f}s")
+            logger.info(f"{'='*60}")
+            
+            return {
+                'success': True,
+                'transcript_id': analyze_result.get('transcript_id'),
+                'transcript_length': len(transcribe_result.get('text', '')),
+                'analysis': analyze_result,
+                'processing_time': total_time
+            }
+            
+        except Exception as e:
+            logger.error(f"Direct pipeline error: {e}", exc_info=True)
+            
+            self.db.log_pipeline_event(
+                run_id=run_id,
+                event_type='pipeline_error',
+                status='error',
+                message=str(e),
+                source_file=file_name
+            )
+            
+            # Try to cleanup even on error
+            try:
+                cleanup_temp_files(context)
+            except:
+                pass
+            
+            return {
+                'success': False,
+                'error': str(e)
+            }
     
     def check_for_files(self) -> list:
         """Check Google Drive for new audio files."""
