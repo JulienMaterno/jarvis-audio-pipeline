@@ -1,118 +1,67 @@
 # 🤖 Jarvis - AI Audio Processing Pipeline
 
-> Automatically transcribe, analyze, and organize voice notes into Notion
+> The ingestion engine for the Jarvis ecosystem. Automatically transcribes audio using Modal (GPU) and sends it to the Intelligence Service.
 
 ## 🚀 Quick Start
 
+### 1. Environment Setup
+
 ```bash
-# 1. Start Docker containers
-docker compose up -d
+# Install dependencies
+pip install -r requirements.txt
 
-# 2. Access Airflow UI
-http://localhost:8080
-# Username: admin | Password: admin
-
-# 3. Enable the DAG
-# Click "jarvis_audio_processing_multi" → Toggle ON
+# Copy environment file
+cp .env.example .env
 ```
 
-## ✨ How It Works
+**Required Environment Variables (.env):**
+```ini
+# Google Drive
+GOOGLE_DRIVE_FOLDER_ID=your_folder_id
+GOOGLE_DRIVE_PROCESSED_FOLDER_ID=your_processed_folder_id
 
-**Input:** Audio files dropped in Google Drive  
-**Output:** Organized Notion pages with transcripts, summaries, and extracted tasks
+# Modal (Transcription)
+MODAL_TOKEN_ID=your_modal_token
+MODAL_TOKEN_SECRET=your_modal_secret
 
-### Pipeline Flow
+# Intelligence Service (The API we call after transcription)
+INTELLIGENCE_SERVICE_URL=https://your-cloud-run-url.run.app
+INTELLIGENCE_SERVICE_TOKEN=optional_if_auth_needed
 
-```
-📁 Google Drive    →    🎙️ Modal GPU     →    🧠 Claude AI    →    📝 Notion
-   (monitor)            (transcribe)          (analyze)           (save)
-```
-
-1. **Monitor** - Checks Google Drive every 15 minutes for new audio
-2. **Transcribe** - Sends to Modal (T4 GPU) for fast Whisper transcription
-3. **Analyze** - Claude 3.5 Haiku categorizes and extracts insights
-4. **Save** - Routes to correct Notion database + saves transcript files
-
-### Output Databases (Notion)
-- **Meetings** - Conversations with others
-- **Reflections** - Personal thoughts and ideas  
-- **Tasks** - Action items with due dates
-- **CRM** - Contact updates
-
-## 📁 Project Structure
-
-```
-Jarvis/
-├── src/                    # Core source code
-│   ├── core/              # Transcription backends
-│   ├── analyzers/         # Claude AI analysis
-│   ├── notion/            # Notion API integrations
-│   └── tasks/             # Airflow task functions
-├── airflow/dags/          # Airflow DAG definition
-├── scripts/               # Deployment & admin scripts
-├── docs/                  # Documentation
-├── data/                  # Credentials (gitignored)
-├── Transcripts/           # Saved transcripts (local)
-└── modal_whisperx_v2.py   # Modal GPU transcription app
+# Supabase (For logging pipeline events)
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_key
 ```
 
-## 🔧 Configuration
+### 2. Google Drive Setup
+1. Create a folder in Google Drive (e.g., "Jarvis Audio").
+2. Create a subfolder named "Processed".
+3. Get the IDs from the URL of both folders.
+4. Place `credentials.json` (Service Account or OAuth) in `data/credentials.json`.
 
-### Environment Variables (`.env`)
+### 3. Running the Pipeline
+
+**Manual Run (Process all files once):**
 ```bash
-CLAUDE_API_KEY=sk-ant-...
-CLAUDE_MODEL=claude-3-5-haiku-20241022
-NOTION_API_KEY=secret_...
-HUGGINGFACE_TOKEN=hf_...
-GOOGLE_DRIVE_FOLDER_ID=...
-GOOGLE_DRIVE_PROCESSED_FOLDER_ID=...
+python run_pipeline.py
 ```
 
-## 🚢 Deployment Options
-
-### Local Docker (current)
+**Daemon Mode (Watch for new files):**
 ```bash
-docker compose up -d
+python run_pipeline.py --daemon
 ```
 
-### Google Cloud Run
-```bash
-./scripts/deploy-cloudrun.sh
-```
+## 🔄 Pipeline Flow
 
-## 💰 Costs
+1.  **Monitor**: Checks Google Drive for new audio files.
+2.  **Download**: Downloads the file locally.
+3.  **Transcribe**: Sends audio to **Modal** (serverless GPU) for WhisperX transcription.
+4.  **Save**: Saves the raw transcript to Supabase.
+5.  **Handoff**: Calls the **Intelligence Service** API with the transcript ID to trigger analysis.
+6.  **Cleanup**: Moves the audio file to the "Processed" folder in Drive.
 
-| Component | Cost |
-|-----------|------|
-| Transcription (Modal) | ~$0.01/minute of audio |
-| Analysis (Claude Haiku) | ~$0.01/file |
-| **Total** | **~$0.02-0.05 per file** |
-
-## 📊 Monitoring
-
-- **Airflow UI:** http://localhost:8080
-- **DAG:** `jarvis_audio_processing_multi`
-- **Schedule:** Every 15 minutes
-- **Parallel:** Up to 3 files simultaneously
-
-## 🛠️ Development
-
-### Modal Transcription (deployed separately)
-```bash
-# Deploy/update Modal app
-modal deploy modal_whisperx_v2.py
-
-# Test endpoint
-curl https://aaron-j-putting--jarvis-whisperx-transcribe-endpoint.modal.run
-```
-
-### Test Google Drive Connection
-```bash
-python test_gdrive_connection.py
-```
-
-## 📚 Documentation
-
-- `docs/QUICKSTART.md` - Getting started guide
-- `docs/DEPLOYMENT.md` - Deployment options
-- `docs/ARCHITECTURE.md` - System design
+## 🛠️ Tech Stack
+*   **Python 3.10+**
+*   **Modal**: Serverless GPU for WhisperX (fast & accurate transcription).
+*   **Google Drive API**: File storage and monitoring.
+*   **Supabase**: Database for tracking pipeline state.
