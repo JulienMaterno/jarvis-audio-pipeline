@@ -228,9 +228,39 @@ async def process_uploaded_file(
                     else:
                         summary_parts.append(f"✅ Task: {title}")
             
+            # Add CRM contact linking feedback (from db_records merged into analysis)
+            contact_matches = analysis.get('contact_matches', [])
+            contact_feedback = []
+            
+            for match in contact_matches:
+                searched_name = match.get('searched_name', '')
+                
+                if match.get('matched') and match.get('linked_contact'):
+                    linked = match['linked_contact']
+                    linked_name = linked.get('name', searched_name)
+                    company = linked.get('company', '')
+                    if company:
+                        contact_feedback.append(f"👤 Linked to: {linked_name} ({company})")
+                    else:
+                        contact_feedback.append(f"👤 Linked to: {linked_name}")
+                elif match.get('suggestions'):
+                    # No exact match but have suggestions
+                    suggestions = match['suggestions']
+                    suggestion_names = [s.get('name', '') for s in suggestions[:3]]
+                    contact_feedback.append(
+                        f"⚠️ '{searched_name}' not found. Did you mean: {', '.join(suggestion_names)}?"
+                    )
+                else:
+                    # No match and no suggestions
+                    contact_feedback.append(f"➕ Unknown contact: {searched_name}")
+            
+            if contact_feedback:
+                summary_parts.append("")  # Empty line separator
+                summary_parts.extend(contact_feedback)
+            
             # If nothing was extracted, show generic message
-            if not summary_parts:
-                summary_parts.append(f"📝 Recorded as: {category}")
+            if not meetings and not reflections and not tasks:
+                summary_parts = [f"📝 Recorded as: {category}"]
             
             return {
                 "status": "success",
@@ -241,7 +271,8 @@ async def process_uploaded_file(
                     "reflections_created": len(reflections),
                     "tasks_created": len(tasks),
                     "transcript_id": result.get('transcript_id'),
-                    "transcript_length": result.get('transcript_length', 0)
+                    "transcript_length": result.get('transcript_length', 0),
+                    "contact_matches": contact_matches  # Include full details for bot
                 }
             }
         else:
