@@ -11,7 +11,9 @@ import logging
 import hmac
 import hashlib
 import asyncio
-from fastapi import FastAPI, HTTPException, Request, Header, BackgroundTasks
+import tempfile
+from pathlib import Path
+from fastapi import FastAPI, HTTPException, Request, Header, BackgroundTasks, UploadFile, File, Form
 from contextlib import asynccontextmanager
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -230,6 +232,154 @@ async def drive_webhook(
         
     except Exception as e:
         logger.error(f"Webhook processing error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/process/upload")
+async def process_uploaded_file(
+    file: UploadFile = File(...),
+    username: str = Form(default="unknown")
+):
+    """
+    Process an uploaded audio file directly (no Google Drive).
+    Returns detailed results about what was created.
+    
+    Used by Telegram bot for instant processing with feedback.
+    """
+    global pipeline
+    
+    if pipeline is None:
+        raise HTTPException(status_code=500, detail="Pipeline not initialized")
+    
+    # Import Config here to avoid circular import
+    from src.config import Config
+    
+    try:
+        logger.info(f"Direct upload received: {file.filename} from {username}")
+        
+        # Save uploaded file to temp directory
+        temp_dir = Path(Config.TEMP_AUDIO_DIR)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        temp_path = temp_dir / file.filename
+        
+        # Write file to disk
+        content = await file.read()
+        with open(temp_path, 'wb') as f:
+            f.write(content)
+        
+        logger.info(f"Saved to temp: {temp_path} ({len(content)} bytes)")
+        
+        # Create fake file metadata (as if from Google Drive)
+        file_metadata = {
+            'id': f'direct_upload_{file.filename}',
+            'name': file.filename,
+            'mimeType': file.content_type or 'audio/ogg',
+            'size': len(content),
+            'modifiedTime': None,
+            'parents': []
+        }
+        
+        # Process the file directly
+        result = pipeline.process_file_direct(file_metadata, temp_path)
+        
+        # Clean up temp file
+        if temp_path.exists():
+            temp_path.unlink()
+        
+        if result.get('success'):
+            # Build a human-readable summary
+            analysis = result.get('analysis', {})
+            category = analysis.get('primary_category', 'recording')
+            
+            summary_parts = []
+            
+            # Describe what was created
+            meetings = analysis.get('meetings', [])
+            reflections = analysis.get('reflections', [])
+            tasks = analysis.get('tasks', [])
+            
+            if meetings:
+                for m in meetings:
+                    title = m.get('title', 'Untitled')
+                    person = m.get('person_name', '')
+                    if person:
+                        summary_parts.append(f"📅 Meeting: {title} with {person}")
+                    else:
+                        summary_parts.append(f"📅 Meeting: {title}")
+            
+            if reflections:
+                for r in reflections:
+                    title = r.get('title', 'Untitled')
+                    summary_parts.append(f"💭 Reflection: {title}")
+            
+            if tasks:
+                for t in tasks:
+                    title = t.get('title', 'Untitled')
+                    due = t.get('due_context') or t.get('due_date') or ''
+                    if due:
+                        summary_parts.append(f"✅ Task: {title} (due: {due})")
+                    else:
+                        summary_parts.append(f"✅ Task: {title}")
+            
+            # Add CRM contact linking feedback (from db_records merged into analysis)
+            contact_matches = analysis.get('contact_matches', [])
+            contact_feedback = []
+            
+            for match in contact_matches:
+                searched_name = match.get('searched_name', '')
+                
+                if match.get('matched') and match.get('linked_contact'):
+                    linked = match['linked_contact']
+                    linked_name = linked.get('name', searched_name)
+                    company = linked.get('company', '')
+                    if company:
+                        contact_feedback.append(f"👤 Linked to: {linked_name} ({company})")
+                    else:
+                        contact_feedback.append(f"👤 Linked to: {linked_name}")
+                elif match.get('suggestions'):
+                    # No exact match but have suggestions
+                    suggestions = match['suggestions']
+                    suggestion_names = [s.get('name', '') for s in suggestions[:3]]
+                    contact_feedback.append(
+                        f"⚠️ '{searched_name}' not found. Did you mean: {', '.join(suggestion_names)}?"
+                    )
+                else:
+                    # No match and no suggestions
+                    contact_feedback.append(f"➕ Unknown contact: {searched_name}")
+            
+            if contact_feedback:
+                summary_parts.append("")  # Empty line separator
+                summary_parts.extend(contact_feedback)
+            
+            # If nothing was extracted, show generic message
+            if not meetings and not reflections and not tasks:
+                summary_parts = [f"📝 Recorded as: {category}"]
+            
+            return {
+                "status": "success",
+                "category": category,
+                "summary": "\n".join(summary_parts),
+                "details": {
+                    "meetings_created": len(meetings),
+                    "reflections_created": len(reflections),
+                    "tasks_created": len(tasks),
+                    "transcript_id": result.get('transcript_id'),
+                    "transcript_length": result.get('transcript_length', 0),
+                    "contact_matches": contact_matches,
+                    "meeting_ids": analysis.get('meeting_ids', []),
+                    "reflection_ids": analysis.get('reflection_ids', [])
+                }
+            }
+        else:
+            return {
+                "status": "error",
+                "error": result.get('error', 'Unknown error'),
+                "summary": "Failed to process audio"
+            }
+        
+    except Exception as e:
+        logger.error(f"Direct upload processing error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
