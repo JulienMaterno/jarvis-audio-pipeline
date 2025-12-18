@@ -222,12 +222,20 @@ async def process_uploaded_file(
             if tasks:
                 for t in tasks:
                     title = t.get('title', 'Untitled')
-                    summary_parts.append(f"✅ Task: {title}")
+                    due = t.get('due_context') or t.get('due_date') or ''
+                    if due:
+                        summary_parts.append(f"✅ Task: {title} (due: {due})")
+                    else:
+                        summary_parts.append(f"✅ Task: {title}")
+            
+            # If nothing was extracted, show generic message
+            if not summary_parts:
+                summary_parts.append(f"📝 Recorded as: {category}")
             
             return {
                 "status": "success",
                 "category": category,
-                "summary": "\n".join(summary_parts) if summary_parts else f"Processed as {category}",
+                "summary": "\n".join(summary_parts),
                 "details": {
                     "meetings_created": len(meetings),
                     "reflections_created": len(reflections),
