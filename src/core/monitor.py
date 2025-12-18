@@ -6,9 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
@@ -27,63 +25,41 @@ class GoogleDriveMonitor:
         self._authenticate()
     
     def _authenticate(self):
-        """Authenticate with Google Drive API using Secret Manager (cloud) or files (local)."""
-        creds = None
-        token_file = None  # Track whether we're using file-based auth
+        """Authenticate with Google Drive API using service account."""
+        # Check for service account JSON in environment (Cloud Run)
+        service_account_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
         
-        # Check if running in cloud with secrets (Secret Manager)
-        token_json = os.getenv('GOOGLE_TOKEN_JSON')
-        if token_json:
+        if service_account_json:
+            # Load from environment variable (cloud deployment)
             try:
-                creds = Credentials.from_authorized_user_info(
-                    json.loads(token_json),
-                    SCOPES
+                service_account_info = json.loads(service_account_json)
+                creds = service_account.Credentials.from_service_account_info(
+                    service_account_info,
+                    scopes=SCOPES
                 )
-                logger.info("Loaded credentials from Secret Manager")
+                logger.info("Loaded service account credentials from environment")
             except Exception as e:
-                logger.warning(f"Failed to load credentials from secret: {e}")
-        
-        # Fallback to file-based credentials (local development)
-        if not creds:
-            # Get absolute path for credentials file
+                logger.error(f"Failed to load service account from environment: {e}")
+                raise
+        else:
+            # Load from file (local development)
             credentials_path = Path(self.credentials_file).resolve()
-            token_file = credentials_path.parent / 'token.json'
+            service_account_file = credentials_path.parent / 'service-account.json'
             
-            # Load existing credentials
-            if token_file.exists():
-                creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
-                logger.info("Loaded credentials from token.json")
-        
-        # Refresh or create new credentials
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                    logger.info("Refreshed expired Google Drive token")
-                except Exception as e:
-                    logger.warning(f"Token refresh failed: {e}. Need to re-authenticate.")
-                    # Token refresh failed, need manual re-auth (only works locally)
-                    if token_file:
-                        flow = InstalledAppFlow.from_client_secrets_file(
-                            str(credentials_path), SCOPES)
-                        creds = flow.run_local_server(port=0)
-                    else:
-                        raise Exception("Token expired and cannot refresh in cloud mode")
+            if service_account_file.exists():
+                creds = service_account.Credentials.from_service_account_file(
+                    str(service_account_file),
+                    scopes=SCOPES
+                )
+                logger.info("Loaded service account credentials from file")
             else:
-                if token_file:
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        str(credentials_path), SCOPES)
-                    creds = flow.run_local_server(port=0)
-                else:
-                    raise Exception("No valid credentials available")
-            
-            # Save credentials for next run (only for file-based auth)
-            if token_file:
-                with open(token_file, 'w') as token:
-                    token.write(creds.to_json())
+                raise FileNotFoundError(
+                    f"Service account file not found: {service_account_file}\n"
+                    f"Please place your service account JSON at {service_account_file}"
+                )
         
         self.service = build('drive', 'v3', credentials=creds)
-        logger.info("Authenticated with Google Drive")
+        logger.info("Authenticated with Google Drive using service account")
     
     def list_audio_files(self, 
                         supported_formats: List[str],

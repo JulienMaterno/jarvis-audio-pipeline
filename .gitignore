@@ -4,9 +4,12 @@
 .env.production
 !.env.example
 
-# Google Drive credentials
+# Google Drive credentials (OAuth - no longer used)
 data/credentials.json
 data/token.json
+
+# Service account credentials (used for authentication)
+data/service-account.json
 
 # Python
 __pycache__/
