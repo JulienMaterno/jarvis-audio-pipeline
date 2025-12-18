@@ -112,6 +112,35 @@ async def process_one_file():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/webhook/drive")
+async def drive_webhook(request: dict = None):
+    """
+    Google Drive push notification webhook.
+    Triggered when files are added/modified in the watched folder.
+    Processes files immediately instead of waiting for scheduler.
+    """
+    global pipeline
+    
+    if pipeline is None:
+        raise HTTPException(status_code=500, detail="Pipeline not initialized")
+    
+    try:
+        logger.info("Drive webhook triggered - processing files")
+        
+        # Process all available files
+        processed_count = pipeline.run_all()
+        
+        return {
+            "status": "success",
+            "files_processed": processed_count,
+            "message": f"Webhook processed {processed_count} file(s)"
+        }
+        
+    except Exception as e:
+        logger.error(f"Webhook processing error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
