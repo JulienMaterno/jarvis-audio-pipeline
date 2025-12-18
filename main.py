@@ -272,7 +272,9 @@ async def process_uploaded_file(
                     "tasks_created": len(tasks),
                     "transcript_id": result.get('transcript_id'),
                     "transcript_length": result.get('transcript_length', 0),
-                    "contact_matches": contact_matches  # Include full details for bot
+                    "contact_matches": contact_matches,  # Include full details for bot
+                    "meeting_ids": analysis.get('meeting_ids', []),  # For linking contacts
+                    "reflection_ids": analysis.get('reflection_ids', [])
                 }
             }
         else:
