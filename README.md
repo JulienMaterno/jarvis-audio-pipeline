@@ -1,6 +1,16 @@
-# 🤖 Jarvis - AI Audio Processing Pipeline
+# 🎤 Jarvis Audio Pipeline
 
-> The ingestion engine for the Jarvis ecosystem. Automatically transcribes audio using Modal (GPU) and sends it to the Intelligence Service.
+> **Audio ingestion only.** Monitors Google Drive for audio files, transcribes using Modal (GPU), saves the transcript, then hands off to the Intelligence Service for analysis.
+
+## 🎯 Role in the Ecosystem
+
+This service does **ONE thing well**: audio → text. It does NOT contain any AI/LLM logic.
+
+```
+Audio File → Download → Transcribe (Modal) → Save Transcript → Call Intelligence Service → Move to Processed
+```
+
+**Why no AI here?** All intelligence lives in the Intelligence Service. This keeps the pipeline simple and focused.
 
 ## 🚀 Quick Start
 
@@ -24,11 +34,10 @@ GOOGLE_DRIVE_PROCESSED_FOLDER_ID=your_processed_folder_id
 MODAL_TOKEN_ID=your_modal_token
 MODAL_TOKEN_SECRET=your_modal_secret
 
-# Intelligence Service (The API we call after transcription)
-INTELLIGENCE_SERVICE_URL=https://your-cloud-run-url.run.app
-INTELLIGENCE_SERVICE_TOKEN=optional_if_auth_needed
+# Intelligence Service (Called after transcription)
+INTELLIGENCE_SERVICE_URL=https://jarvis-intelligence-service-xxx.run.app
 
-# Supabase (For logging pipeline events)
+# Supabase (For saving transcripts)
 SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_key
 ```
@@ -46,22 +55,23 @@ SUPABASE_KEY=your_supabase_key
 python run_pipeline.py
 ```
 
-**Daemon Mode (Watch for new files):**
+**Cloud Run (Webhook-triggered):**
 ```bash
-python run_pipeline.py --daemon
+gcloud run deploy jarvis-audio-pipeline --source . --region asia-southeast1
 ```
 
 ## 🔄 Pipeline Flow
 
-1.  **Monitor**: Checks Google Drive for new audio files.
-2.  **Download**: Downloads the file locally.
-3.  **Transcribe**: Sends audio to **Modal** (serverless GPU) for WhisperX transcription.
-4.  **Save**: Saves the raw transcript to Supabase.
-5.  **Handoff**: Calls the **Intelligence Service** API with the transcript ID to trigger analysis.
-6.  **Cleanup**: Moves the audio file to the "Processed" folder in Drive.
+1.  **Trigger**: Receives webhook from Google Drive (or polls in daemon mode)
+2.  **Download**: Downloads the audio file locally
+3.  **Transcribe**: Sends audio to **Modal** (serverless GPU) for WhisperX transcription
+4.  **Save**: Saves the raw transcript to Supabase `transcripts` table
+5.  **Handoff**: Calls **Intelligence Service** `/api/v1/process/{transcript_id}` for AI analysis
+6.  **Cleanup**: Moves the audio file to the "Processed" folder in Drive
 
 ## 🛠️ Tech Stack
 *   **Python 3.10+**
-*   **Modal**: Serverless GPU for WhisperX (fast & accurate transcription).
-*   **Google Drive API**: File storage and monitoring.
-*   **Supabase**: Database for tracking pipeline state.
+*   **Modal**: Serverless GPU for WhisperX (fast & accurate transcription)
+*   **Google Drive API**: File storage and monitoring
+*   **Supabase**: Database for transcripts
+*   **No AI libraries**: All AI is in Intelligence Service
