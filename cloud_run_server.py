@@ -301,9 +301,22 @@ async def process_uploaded_file(
             summary_parts = []
             
             # Describe what was created
+            journals = analysis.get('journals', [])
             meetings = analysis.get('meetings', [])
             reflections = analysis.get('reflections', [])
             tasks = analysis.get('tasks', [])
+            task_ids = analysis.get('task_ids', [])
+            
+            if journals:
+                for j in journals:
+                    date = j.get('date', 'today')
+                    mood = j.get('overall_mood', '')
+                    tomorrow_focus = j.get('tomorrow_focus', [])
+                    summary_parts.append(f"📓 Journal entry for {date}")
+                    if mood:
+                        summary_parts.append(f"   Mood: {mood}")
+                    if tomorrow_focus:
+                        summary_parts.append(f"   Tomorrow's focus: {len(tomorrow_focus)} items")
             
             if meetings:
                 for m in meetings:
@@ -319,7 +332,10 @@ async def process_uploaded_file(
                     title = r.get('title', 'Untitled')
                     summary_parts.append(f"💭 Reflection: {title}")
             
-            if tasks:
+            # Show task count from task_ids (includes tomorrow_focus tasks)
+            if task_ids:
+                summary_parts.append(f"✅ {len(task_ids)} task(s) created")
+            elif tasks:
                 for t in tasks:
                     title = t.get('title', 'Untitled')
                     due = t.get('due_context') or t.get('due_date') or ''
@@ -359,7 +375,7 @@ async def process_uploaded_file(
                 summary_parts.extend(contact_feedback)
             
             # If nothing was extracted, show generic message
-            if not meetings and not reflections and not tasks:
+            if not journals and not meetings and not reflections and not tasks and not task_ids:
                 summary_parts = [f"📝 Recorded as: {category}"]
             
             return {
@@ -367,14 +383,17 @@ async def process_uploaded_file(
                 "category": category,
                 "summary": "\n".join(summary_parts),
                 "details": {
+                    "journals_created": len(journals),
                     "meetings_created": len(meetings),
                     "reflections_created": len(reflections),
-                    "tasks_created": len(tasks),
+                    "tasks_created": len(task_ids) if task_ids else len(tasks),
                     "transcript_id": result.get('transcript_id'),
                     "transcript_length": result.get('transcript_length', 0),
                     "contact_matches": contact_matches,
+                    "journal_ids": analysis.get('journal_ids', []),
                     "meeting_ids": analysis.get('meeting_ids', []),
-                    "reflection_ids": analysis.get('reflection_ids', [])
+                    "reflection_ids": analysis.get('reflection_ids', []),
+                    "task_ids": task_ids
                 }
             }
         else:
