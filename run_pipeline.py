@@ -231,7 +231,7 @@ class AudioPipeline:
                     'file_metadata': file_metadata
                 },
                 'download_audio_file': {
-                    'local_path': str(local_path),
+                    'audio_path': str(local_path),  # Must be 'audio_path' to match what transcribe_audio expects
                     'file_name': file_name,
                     'file_size': file_metadata.get('size', 0)
                 }
