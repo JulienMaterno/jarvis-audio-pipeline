@@ -6,8 +6,7 @@ whisperx>=3.1.1
 torch==2.4.1  # Pinned for pyannote.audio 3.3.2 compatibility (2.9.x breaks AudioMetaData)
 torchaudio==2.4.1  # Must match torch version
 pyannote.audio==3.3.2  # Required by whisperx, needs torchaudio <2.5
-# resemblyzer>=0.1.1  # Temporarily disabled - requires C compiler for webrtcvad
-anthropic>=0.73.0
+# anthropic - NOT needed here, AI analysis is done by jarvis-intelligence-service
 notion-client==2.2.1
 supabase>=2.0.0
 python-dotenv==1.0.0

@@ -3,7 +3,6 @@
 from .monitor_task import monitor_google_drive
 from .download_task import download_audio_file
 from .transcribe_task import transcribe_audio
-from .analyze_task import analyze_transcript
 from .analyze_task_multi import analyze_transcript_multi
 from .supabase_task import save_to_supabase
 from .move_task import move_to_processed
@@ -19,9 +18,8 @@ __all__ = [
     'monitor_google_drive',
     'download_audio_file',
     'transcribe_audio',
-    'analyze_transcript',
-    'analyze_transcript_multi',
-    'save_to_supabase',  # NEW: Primary save target
+    'analyze_transcript_multi',  # Uses Intelligence Service
+    'save_to_supabase',
     'move_to_processed',
     'save_transcript',
     'cleanup_temp_files',
