@@ -99,7 +99,7 @@ async def health_check():
 
 
 @app.post("/process")
-async def process_files(background: bool = False):
+async def process_files(background: bool = False, reset: bool = False):
     """
     Process all available audio files in Google Drive.
     Called by Cloud Scheduler every 5 minutes.
@@ -107,6 +107,7 @@ async def process_files(background: bool = False):
     Args:
         background: If True, process asynchronously and return immediately.
                    Recommended for large files (2+ hours).
+        reset: If True, clear the processed files cache to force reprocessing.
     """
     global pipeline, is_processing
     
@@ -118,6 +119,11 @@ async def process_files(background: bool = False):
             "status": "already_processing",
             "message": "Processing already in progress"
         }
+    
+    # Clear processed files cache if requested
+    if reset:
+        pipeline.processed_files.clear()
+        logger.info("Cleared processed files cache (reset=True)")
     
     try:
         logger.info(f"Processing request received (background={background})")
