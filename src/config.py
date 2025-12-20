@@ -31,7 +31,7 @@ class Config:
     # CLAUDE API
     # =========================================================================
     ANTHROPIC_API_KEY = os.getenv('CLAUDE_API_KEY')
-    CLAUDE_MODEL = os.getenv('CLAUDE_MODEL', 'claude-3-5-haiku-20241022')
+    CLAUDE_MODEL = os.getenv('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022')
     
     # =========================================================================
     # NOTION (Legacy - kept for jarvis-backend sync reference)
