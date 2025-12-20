@@ -142,27 +142,8 @@ def save_to_supabase(context: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception as e:
                     logger.error(f"Failed to create reflection {i+1}: {e}", exc_info=True)
         
-        # Fallback: If no meetings or reflections were created
-        if not result['meeting_ids'] and not result['reflection_ids']:
-            logger.warning(f"No meetings or reflections created for category '{primary_category}'")
-            # Create a basic reflection as fallback
-            fallback_reflection = {
-                'title': file_name.replace('.mp3', '').replace('.m4a', '').replace('_', ' ')[:60],
-                'date': None,
-                'location': None,
-                'tags': ['unprocessed', primary_category],
-                'content': transcript[:1000]
-            }
-            reflection_id, reflection_url = db.create_reflection(
-                reflection_data=fallback_reflection,
-                transcript=transcript,
-                duration=duration,
-                filename=file_name,
-                transcript_id=transcript_id
-            )
-            result['reflection_ids'].append(reflection_id)
-            result['reflection_urls'].append(reflection_url)
-            logger.info(f"Fallback reflection created: {reflection_id}")
+        # NOTE: No fallback - let Intelligence Service handle all analysis
+        # If nothing was created, that's intentional (e.g., short audio, silence)
         
         # Determine primary item for task linking
         if result['meeting_ids']:

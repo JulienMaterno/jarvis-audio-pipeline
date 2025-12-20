@@ -118,26 +118,8 @@ def save_to_notion_multi(context: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception as e:
                     logger.error(f"Failed to create reflection {i+1}: {e}", extra={'reflection_index': i, 'error': str(e)}, exc_info=True)
         
-        # Fallback: If no meetings or reflections were created
-        if not result['meeting_ids'] and not result['reflection_ids']:
-            logger.warning(f"No meetings or reflections created for category '{primary_category}'")
-            # Create a basic reflection as fallback
-            fallback_reflection = {
-                'title': file_name.replace('.mp3', '').replace('.m4a', '').replace('_', ' ')[:60],
-                'date': None,
-                'location': None,
-                'tags': ['unprocessed', primary_category],
-                'content': transcript[:1000]
-            }
-            page_id, page_url = notion.create_reflection(
-                reflection_data=fallback_reflection,
-                transcript=transcript,
-                duration=duration,
-                filename=file_name
-            )
-            result['reflection_ids'].append(page_id)
-            result['reflection_urls'].append(page_url)
-            logger.info(f"Fallback reflection created: {page_url}")
+        # NOTE: No fallback - let Intelligence Service handle all analysis
+        # If nothing was created, that's intentional (e.g., short audio, silence)
         
         # Step 3: Create tasks (if any)
         # Link tasks to first meeting or reflection created
