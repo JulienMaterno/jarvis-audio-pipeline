@@ -48,17 +48,15 @@ SUPABASE_KEY=your_supabase_key
 3. Get the IDs from the URL of both folders.
 4. Place `credentials.json` (Service Account or OAuth) in `data/credentials.json`.
 
-### 3. Running the Pipeline
+### 3. Deployment (CI/CD)
 
-**Manual Run (Process all files once):**
-```bash
-python run_pipeline.py
-```
+This service is automatically deployed to **Google Cloud Run** via **Google Cloud Build** whenever code is pushed to the `main` branch.
 
-**Cloud Run (Webhook-triggered):**
-```bash
-gcloud run deploy jarvis-audio-pipeline --source . --region asia-southeast1
-```
+*   **Trigger**: Push to `main`
+*   **Build Config**: `cloudbuild.yaml`
+*   **Environment Variables**:
+    *   `INTELLIGENCE_SERVICE_URL`: URL of the Intelligence Service (for handoff)
+*   **Secrets**: Managed via Google Secret Manager
 
 ## 🔄 Pipeline Flow
 
@@ -66,7 +64,7 @@ gcloud run deploy jarvis-audio-pipeline --source . --region asia-southeast1
 2.  **Download**: Downloads the audio file locally
 3.  **Transcribe**: Sends audio to **Modal** (serverless GPU) for WhisperX transcription
 4.  **Save**: Saves the raw transcript to Supabase `transcripts` table
-5.  **Handoff**: Calls **Intelligence Service** `/api/v1/process/{transcript_id}` for AI analysis
+5.  **Handoff**: Calls **Intelligence Service** (`INTELLIGENCE_SERVICE_URL`) for AI analysis
 6.  **Cleanup**: Moves the audio file to the "Processed" folder in Drive
 
 ## 🛠️ Tech Stack
