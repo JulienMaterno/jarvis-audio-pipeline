@@ -66,9 +66,11 @@ def analyze_transcript_multi(context: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"Transcript saved with ID: {transcript_id}")
     
     # 2. Trigger Intelligence Service
-    api_url = os.getenv('INTELLIGENCE_SERVICE_URL', 'http://localhost:8000/api/v1/process')
-    # Append ID to URL if using path param
-    full_url = f"{api_url}/{transcript_id}"
+    # INTELLIGENCE_SERVICE_URL should be the base URL (e.g., https://jarvis-intelligence-service-xxx.run.app)
+    base_url = os.getenv('INTELLIGENCE_SERVICE_URL', 'http://localhost:8000')
+    # Remove trailing slash if present, then append the API path
+    base_url = base_url.rstrip('/')
+    full_url = f"{base_url}/api/v1/process/{transcript_id}"
     
     last_error = None
     
