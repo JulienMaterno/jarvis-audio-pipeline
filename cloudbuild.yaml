@@ -34,6 +34,8 @@ steps:
       - '1'  # Keep one instance always running for daemon mode
       - '--max-instances'
       - '1'
+      - '--set-env-vars'
+      - 'INTELLIGENCE_SERVICE_URL=$_INTELLIGENCE_SERVICE_URL'
       - '--set-secrets'
       - 'SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,CLAUDE_API_KEY=CLAUDE_API_KEY:latest,GOOGLE_SERVICE_ACCOUNT_JSON=google-service-account:latest,GOOGLE_DRIVE_FOLDER_ID=GOOGLE_DRIVE_FOLDER_ID:latest,GOOGLE_DRIVE_PROCESSED_FOLDER_ID=GOOGLE_DRIVE_PROCESSED_FOLDER_ID:latest,MODAL_TOKEN_ID=MODAL_TOKEN_ID:latest,MODAL_TOKEN_SECRET=MODAL_TOKEN_SECRET:latest'
 
