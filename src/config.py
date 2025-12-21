@@ -28,12 +28,6 @@ class Config:
     GOOGLE_DRIVE_PROCESSED_FOLDER_ID = os.getenv('GOOGLE_DRIVE_PROCESSED_FOLDER_ID', '').strip()
     
     # =========================================================================
-    # CLAUDE API
-    # =========================================================================
-    ANTHROPIC_API_KEY = os.getenv('CLAUDE_API_KEY')
-    CLAUDE_MODEL = os.getenv('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022')
-    
-    # =========================================================================
     # NOTION (Legacy - kept for jarvis-backend sync reference)
     # NOTE: This pipeline NO LONGER writes to Notion directly.
     # Notion sync is handled by jarvis-backend from Supabase.
@@ -67,7 +61,6 @@ class Config:
             ('SUPABASE_URL', cls.SUPABASE_URL),
             ('SUPABASE_KEY', cls.SUPABASE_KEY),
             ('GOOGLE_DRIVE_FOLDER_ID', cls.GOOGLE_DRIVE_FOLDER_ID),
-            ('ANTHROPIC_API_KEY', cls.ANTHROPIC_API_KEY),
         ]
         
         missing = [name for name, value in required if not value]
@@ -75,7 +68,5 @@ class Config:
             raise ValueError(f"Missing required config: {', '.join(missing)}")
         
         # Create directories if they don't exist
-        cls.TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-        cls.LOG_DIR.mkdir(parents=True, exist_ok=True)
         cls.TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
         cls.LOG_DIR.mkdir(parents=True, exist_ok=True)

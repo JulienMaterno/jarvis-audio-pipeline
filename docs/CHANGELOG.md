@@ -144,7 +144,7 @@ This file tracks all code changes made to the project. AI agents and developers 
 
 ### 2025-11-25 - Multiple Meetings Per File & Intelligent CRM Matching (MAJOR ENHANCEMENT)
 - **Files Modified**:
-  - `src/analyzers/multi_db_analyzer.py` - Changed from single objects to arrays
+  - `src/analyzers/multi_db_analyzer.py` *(legacy; analyzer now lives in jarvis-intelligence-service/app/services/llm.py)* - Changed from single objects to arrays
   - `src/tasks/notion_task_multi.py` - Loop through arrays creating multiple pages
   - `src/notion/multi_db.py` - Complete rewrite of CRM person matching
 

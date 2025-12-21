@@ -1,70 +1,79 @@
+"""Quick sanity check for the multi-database analysis flow.
+
+This script now calls jarvis-intelligence-service directly instead of using a
+local Claude analyzer. Run the intelligence service locally before executing
+the script:
+
+    uvicorn main:app --reload
 """
-Test the Claude multi-database analyzer with correct model
-"""
+
+import json
 import os
 import sys
-import json
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import requests
 
-from config import Config
-from llm_analyzer_multi import ClaudeMultiAnalyzer
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
 
-def test_claude_analysis():
-    """Test Claude analysis with a sample transcript"""
-    
-    analyzer = ClaudeMultiAnalyzer(Config.ANTHROPIC_API_KEY)
-    
-    test_transcript = """
-    Had a great evening reflection today. I've been thinking about my morning routine 
-    and how I can be more productive. I realized I need to start waking up earlier, 
-    maybe around 6am. Also want to start meditating for 10 minutes each morning.
-    
-    On another note, I should probably call my mom this weekend, haven't talked to 
-    her in a while. And I need to finish that proposal for the client by Friday.
-    """
-    
-    print("\n" + "="*60)
-    print("TESTING CLAUDE MULTI-DATABASE ANALYZER")
-    print("="*60 + "\n")
-    
-    print("Test Transcript:")
-    print(test_transcript)
-    print("\n" + "-"*60 + "\n")
-    
+
+def test_intelligence_service():
+    """POST a sample transcript to the intelligence service analyze endpoint."""
+
+    base_url = os.getenv("INTELLIGENCE_SERVICE_URL", "http://localhost:8000").rstrip("/")
+    endpoint = f"{base_url}/api/v1/analyze"
+
+    test_transcript = (
+        "Had a great evening reflection today. I've been thinking about my morning routine "
+        "and how I can be more productive. I realized I need to start waking up earlier, "
+        "maybe around 6am. Also want to start meditating for 10 minutes each morning.\n\n"
+        "On another note, I should probably call my mom this weekend, haven't talked to "
+        "her in a while. And I need to finish that proposal for the client by Friday."
+    )
+
+    payload = {
+        "filename": "test_reflection.mp3",
+        "transcript": test_transcript,
+        "audio_duration_seconds": 180,
+        "recording_date": "2025-11-22",
+        "language": "en"
+    }
+
+    print("\n" + "=" * 60)
+    print("TESTING INTELLIGENCE SERVICE ANALYZE ENDPOINT")
+    print("=" * 60 + "\n")
+    print(f"POST {endpoint}\n")
+
     try:
-        result = analyzer.analyze_transcript(
-            transcript=test_transcript,
-            filename="test_reflection.mp3",
-            recording_date="2025-11-22"
-        )
-        
-        print("✅ SUCCESS! Claude API is working\n")
-        print("Analysis Result:")
-        print(json.dumps(result, indent=2))
-        
-        print("\n" + "="*60)
+        response = requests.post(endpoint, json=payload, timeout=60)
+        response.raise_for_status()
+
+        data = response.json()
+        analysis = data.get("analysis", {})
+        db_records = data.get("db_records", {})
+
+        print("✅ SUCCESS! Intelligence service returned a response.\n")
+        print("Analysis:")
+        print(json.dumps(analysis, indent=2))
+
+        print("\nDatabase Records:")
+        print(json.dumps(db_records, indent=2))
+
+        print("\n" + "=" * 60)
         print("BREAKDOWN:")
-        print("="*60)
-        print(f"Primary Category: {result.get('primary_category')}")
-        print(f"Has Meeting Data: {result.get('meeting') is not None}")
-        print(f"Has Reflection Data: {result.get('reflection') is not None}")
-        print(f"Tasks Extracted: {len(result.get('tasks', []))}")
-        print(f"CRM Updates: {len(result.get('crm_updates', []))}")
-        
-        if result.get('reflection'):
-            print(f"\nReflection Title: {result['reflection'].get('title')}")
-            print(f"Reflection Tags: {result['reflection'].get('tags')}")
-        
-        if result.get('tasks'):
-            print("\nTasks:")
-            for i, task in enumerate(result['tasks'], 1):
-                print(f"  {i}. {task.get('title')} (Due: {task.get('due_date', 'No date')})")
-        
-    except Exception as e:
-        print(f"❌ FAILED: {e}")
-        import traceback
-        traceback.print_exc()
+        print("=" * 60)
+        print(f"Primary Category: {analysis.get('primary_category')}")
+        print(f"Meetings: {len(analysis.get('meetings', []))}")
+        print(f"Journals: {len(analysis.get('journals', []))}")
+        print(f"Reflections: {len(analysis.get('reflections', []))}")
+        print(f"Tasks: {len(analysis.get('tasks', []))}")
+        print(f"CRM Updates: {len(analysis.get('crm_updates', []))}")
+
+    except Exception as exc:  # pragma: no cover - debug helper
+        print(f"❌ FAILED: {exc}")
+        raise
+
 
 if __name__ == "__main__":
-    test_claude_analysis()
+    test_intelligence_service()

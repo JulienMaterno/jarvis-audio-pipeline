@@ -20,7 +20,6 @@ logger = logging.getLogger('Jarvis.API')
 
 # Reduce noise
 logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('anthropic').setLevel(logging.WARNING)
 
 # Import pipeline components
 from run_pipeline import AudioPipeline

@@ -55,18 +55,18 @@ graph TD
 - **Output**: Full transcript, duration, language
 - **Location**: `tasks/transcribe_task.py`
 
-#### 4. Analyze with Claude
+#### 4. Hand Off to Intelligence Service
 - **Dependencies**: Transcribe with Whisper
-- **Purpose**: Extract structured information (title, summary, topics, action items)
-- **Output**: Analyzed data dict with arrays for meetings/reflections:
-  - `"meetings": [...]` - Array of meeting objects (supports multiple meetings per file)
-  - `"reflections": [...]` - Array of reflection objects
-  - `"tasks": [...]` - Extracted action items
-  - `"crm_updates": [...]` - Contact updates with intelligent fuzzy name matching
-- **Location**: `src/analyzers/multi_db_analyzer.py`
+- **Purpose**: Save transcript to Supabase and invoke `/api/v1/process/{transcript_id}` on
+  `jarvis-intelligence-service`
+- **Output**: Structured analysis returned by the intelligence service (meetings,
+  journals, reflections, tasks, CRM updates) plus the database IDs created by that service
+- **Location**: `tasks/analyze_task_multi.py`
 - **Special Features**:
-  - **Multiple entries per file**: Single audio can create multiple meeting/reflection pages
-  - **Intelligent CRM matching**: "Paul" auto-links to "Paul Beckers" if only match (8-strategy scoring algorithm)
+  - **Multiple entries per file**: Intelligence service can create several meetings,
+    reflections, journals, and tasks from one transcript
+  - **Centralized CRM matching**: Name resolution and topic routing live entirely in the
+    intelligence service so every client reuses the same logic
 
 #### 5. Save to Notion
 - **Dependencies**: Analyze with Claude

@@ -11,7 +11,6 @@ Usage:
 Environment Variables Required:
     SUPABASE_URL, SUPABASE_KEY
     GOOGLE_DRIVE_FOLDER_ID, GOOGLE_DRIVE_PROCESSED_FOLDER_ID
-    CLAUDE_API_KEY
 """
 
 import os
@@ -47,7 +46,6 @@ logger = logging.getLogger('Jarvis.Pipeline')
 
 # Reduce noise from libraries
 logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('anthropic').setLevel(logging.WARNING)
 
 
 class AudioPipeline:
