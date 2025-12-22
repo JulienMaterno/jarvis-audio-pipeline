@@ -168,12 +168,17 @@ The pipeline supports **multiple transcription backends** with automatic fallbac
 
 ## 🚀 Deployment
 
-### Automatic (Recommended)
-Push to `main` → Cloud Build → Cloud Run
+### Automatic via GitHub (Recommended)
+Push to `main` → Cloud Build → Cloud Run (automatic)
 
-```yaml
-# cloudbuild.yaml triggers automatically
+```bash
+git push origin main
 ```
+
+Cloud Build triggers:
+- **Trigger**: `jarvis-audio-pipeline-deploy`
+- **Branch**: `^main$`
+- **Config**: `cloudbuild.yaml`
 
 ### Environment Variables (Cloud Run)
 ```
