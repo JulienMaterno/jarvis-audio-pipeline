@@ -359,16 +359,7 @@ async def process_uploaded_file(
                         contact_feedback.append(f"👤 Linked to: {linked_name} ({company})")
                     else:
                         contact_feedback.append(f"👤 Linked to: {linked_name}")
-                elif match.get('suggestions'):
-                    # No exact match but have suggestions
-                    suggestions = match['suggestions']
-                    suggestion_names = [s.get('name', '') for s in suggestions[:3]]
-                    contact_feedback.append(
-                        f"⚠️ '{searched_name}' not found. Did you mean: {', '.join(suggestion_names)}?"
-                    )
-                else:
-                    # No match and no suggestions
-                    contact_feedback.append(f"➕ Unknown contact: {searched_name}")
+                # Skip unlinked contacts - they're normal and don't need warnings
             
             if contact_feedback:
                 summary_parts.append("")  # Empty line separator
