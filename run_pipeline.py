@@ -35,6 +35,12 @@ from src.tasks import (
     move_to_processed,
     cleanup_temp_files
 )
+from src.notifications import (
+    send_telegram_message_sync,
+    build_processing_started_message,
+    build_processing_complete_message,
+    build_processing_error_message
+)
 
 # Configure logging
 logging.basicConfig(
@@ -56,20 +62,37 @@ class AudioPipeline:
         self.processed_files = set()
         logger.info("Audio pipeline initialized")
     
-    def process_file(self, file_metadata: dict) -> bool:
+    def process_file(self, file_metadata: dict, notify: bool = True) -> bool:
         """
         Process a single audio file through the entire pipeline.
+        
+        Args:
+            file_metadata: Google Drive file metadata
+            notify: Send Telegram notifications (default True for Drive files)
         
         Returns True if successful, False otherwise.
         """
         run_id = str(uuid.uuid4())
         file_name = file_metadata.get('name', 'unknown')
+        file_size = file_metadata.get('size', 0)
+        file_size_mb = int(file_size) / (1024 * 1024) if file_size else 0
         start_time = time.time()
         
         logger.info(f"{'='*60}")
         logger.info(f"Processing: {file_name}")
         logger.info(f"Run ID: {run_id}")
         logger.info(f"{'='*60}")
+        
+        # Send "processing started" notification
+        if notify:
+            try:
+                start_msg = build_processing_started_message(
+                    filename=file_name,
+                    file_size_mb=file_size_mb
+                )
+                send_telegram_message_sync(start_msg)
+            except Exception as e:
+                logger.warning(f"Could not send start notification: {e}")
         
         # Log pipeline start
         self.db.log_pipeline_event(
@@ -168,6 +191,21 @@ class AudioPipeline:
             logger.info(f"✓ COMPLETE in {total_time:.1f}s")
             logger.info(f"{'='*60}")
             
+            # Send "processing complete" notification with full report
+            if notify:
+                try:
+                    transcript_length = len(context.get('task_results', {}).get('transcribe_audio', {}).get('text', ''))
+                    complete_msg = build_processing_complete_message(
+                        filename=file_name,
+                        analysis=analyze_result,
+                        transcript_length=transcript_length,
+                        processing_time_seconds=total_time,
+                        source="google_drive"
+                    )
+                    send_telegram_message_sync(complete_msg)
+                except Exception as e:
+                    logger.warning(f"Could not send completion notification: {e}")
+            
             return True
             
         except Exception as e:
@@ -180,6 +218,14 @@ class AudioPipeline:
                 message=str(e),
                 source_file=file_name
             )
+            
+            # Send error notification
+            if notify:
+                try:
+                    error_msg = build_processing_error_message(file_name, str(e))
+                    send_telegram_message_sync(error_msg)
+                except Exception as notify_err:
+                    logger.warning(f"Could not send error notification: {notify_err}")
             
             # Even on error, try to move file if we have a transcript saved
             # This prevents re-processing files that failed at analysis stage

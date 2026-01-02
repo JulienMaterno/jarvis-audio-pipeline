@@ -38,13 +38,19 @@ executor = ThreadPoolExecutor(max_workers=2)
 # Track processing state
 processing_lock = asyncio.Lock()
 is_processing = False
+current_file_name = None
+queue_count = 0
+processing_started_at = None
 
 
 def run_pipeline_sync():
     """Run pipeline synchronously (for background thread)."""
-    global pipeline, is_processing
+    global pipeline, is_processing, current_file_name, queue_count, processing_started_at
+    import time
+    
     try:
         is_processing = True
+        processing_started_at = time.time()
         logger.info("Background processing started")
         count = pipeline.run_all()
         logger.info(f"Background processing complete: {count} file(s)")
@@ -54,6 +60,9 @@ def run_pipeline_sync():
         return 0
     finally:
         is_processing = False
+        current_file_name = None
+        queue_count = 0
+        processing_started_at = None
 
 
 @asynccontextmanager
@@ -413,12 +422,71 @@ async def process_uploaded_file(
 
 @app.get("/status")
 async def get_status():
-    """Get current processing status."""
-    return {
+    """Get current processing status with queue info."""
+    import time
+    
+    status_info = {
         "status": "processing" if is_processing else "idle",
         "processing": is_processing,
         "pipeline_ready": pipeline is not None
     }
+    
+    if is_processing:
+        status_info["current_file"] = current_file_name
+        status_info["queue_count"] = queue_count
+        
+        if processing_started_at:
+            elapsed = int(time.time() - processing_started_at)
+            status_info["elapsed_seconds"] = elapsed
+    
+    return status_info
+
+
+@app.get("/queue")
+async def get_queue_status():
+    """
+    Get detailed queue status.
+    Useful for Telegram bot to show processing feedback.
+    """
+    from src.config import Config
+    from src.core.monitor import GoogleDriveMonitor
+    import time
+    
+    try:
+        # Get files waiting in inbox
+        gdrive = GoogleDriveMonitor(
+            credentials_file=Config.GOOGLE_CREDENTIALS_FILE,
+            folder_id=Config.GOOGLE_DRIVE_FOLDER_ID
+        )
+        
+        pending_files = gdrive.list_audio_files()
+        
+        status = {
+            "status": "processing" if is_processing else "idle",
+            "current_file": current_file_name,
+            "pending_count": len(pending_files),
+            "pending_files": [
+                {
+                    "name": f.get('name'),
+                    "size_mb": round(int(f.get('size', 0)) / (1024 * 1024), 1)
+                }
+                for f in pending_files
+            ]
+        }
+        
+        if is_processing and processing_started_at:
+            elapsed = int(time.time() - processing_started_at)
+            status["elapsed_seconds"] = elapsed
+            status["elapsed_display"] = f"{elapsed // 60}m {elapsed % 60}s"
+        
+        return status
+        
+    except Exception as e:
+        logger.error(f"Queue status error: {e}")
+        return {
+            "status": "processing" if is_processing else "idle",
+            "error": str(e)
+        }
 
 
 @app.post("/renew-webhook")
