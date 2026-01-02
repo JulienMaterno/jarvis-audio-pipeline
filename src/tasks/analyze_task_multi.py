@@ -7,7 +7,7 @@ import logging
 import time
 import os
 import requests
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from src.supabase.multi_db import SupabaseMultiDatabase
 
 logger = logging.getLogger('Jarvis.Tasks.AnalyzeMulti')
@@ -15,6 +15,50 @@ logger = logging.getLogger('Jarvis.Tasks.AnalyzeMulti')
 # Retry configuration for API calls
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
+
+
+def get_identity_token(audience: str) -> Optional[str]:
+    """
+    Get Google Cloud identity token for service-to-service authentication.
+    
+    In Cloud Run, this uses the metadata server to get a token.
+    Locally, it tries to use the default credentials.
+    
+    Args:
+        audience: The URL of the service to authenticate to (e.g., the Intelligence Service URL)
+    
+    Returns:
+        Identity token string, or None if running locally without auth
+    """
+    try:
+        # Try Cloud Run metadata server first (fastest, works in Cloud Run)
+        metadata_url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity"
+        response = requests.get(
+            metadata_url,
+            params={"audience": audience},
+            headers={"Metadata-Flavor": "Google"},
+            timeout=2
+        )
+        if response.status_code == 200:
+            logger.debug("Got identity token from metadata server")
+            return response.text
+    except requests.exceptions.RequestException:
+        logger.debug("Metadata server not available (not running in Cloud Run)")
+    
+    # Try google-auth library as fallback (for local development with ADC)
+    try:
+        import google.auth.transport.requests
+        import google.oauth2.id_token
+        
+        auth_request = google.auth.transport.requests.Request()
+        token = google.oauth2.id_token.fetch_id_token(auth_request, audience)
+        logger.debug("Got identity token from google-auth library")
+        return token
+    except Exception as e:
+        logger.debug(f"Could not get identity token from google-auth: {e}")
+    
+    logger.warning("Could not obtain identity token - requests may fail with 403")
+    return None
 
 
 def analyze_transcript_multi(context: Dict[str, Any]) -> Dict[str, Any]:
@@ -72,13 +116,23 @@ def analyze_transcript_multi(context: Dict[str, Any]) -> Dict[str, Any]:
     base_url = base_url.rstrip('/')
     full_url = f"{base_url}/api/v1/process/{transcript_id}"
     
+    # Get identity token for Cloud Run authentication
+    # The audience should be the base URL of the Intelligence Service
+    identity_token = get_identity_token(base_url)
+    headers = {}
+    if identity_token:
+        headers["Authorization"] = f"Bearer {identity_token}"
+        logger.info("Using identity token for authentication")
+    else:
+        logger.warning("No identity token available - may fail if auth required")
+    
     last_error = None
     
     for attempt in range(MAX_RETRIES):
         try:
             logger.info(f"Calling Intelligence Service (attempt {attempt + 1}/{MAX_RETRIES})...")
             # We send an empty body or minimal body since ID is in path
-            response = requests.post(full_url, json={}, timeout=120) 
+            response = requests.post(full_url, json={}, headers=headers, timeout=120) 
             response.raise_for_status()
             
             data = response.json()
