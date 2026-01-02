@@ -25,13 +25,13 @@ steps:
       - 'managed'
       - '--no-allow-unauthenticated'
       - '--memory'
-      - '1Gi'
+      - '8Gi'
       - '--cpu'
-      - '1'
+      - '4'
       - '--timeout'
       - '900'
       - '--min-instances'
-      - '1'  # Keep one instance always running for daemon mode
+      - '0'  # Scale to zero when idle (cost efficient)
       - '--max-instances'
       - '1'
       - '--set-env-vars'
