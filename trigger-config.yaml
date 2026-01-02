@@ -1,0 +1,6 @@
+﻿name: jarvis-audio-pipeline-deploy
+repositoryEventConfig:
+  repository: projects/jarvis-478401/locations/asia-southeast1/connections/github-connection/repositories/jarvis-audio-pipeline
+  push:
+    branch: ^main$
+filename: cloudbuild.yaml

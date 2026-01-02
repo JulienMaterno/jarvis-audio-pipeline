@@ -99,7 +99,7 @@ async def health_check():
 
 
 @app.post("/process")
-async def process_files(background: bool = False, reset: bool = False):
+async def process_files(background: bool = False, reset: bool = False, force: bool = False):
     """
     Process all available audio files in Google Drive.
     Called by Cloud Scheduler every 5 minutes.
@@ -108,11 +108,18 @@ async def process_files(background: bool = False, reset: bool = False):
         background: If True, process asynchronously and return immediately.
                    Recommended for large files (2+ hours).
         reset: If True, clear the processed files cache to force reprocessing.
+        force: If True, clear the processing lock even if processing flag is set.
+               Use this to recover from stuck state after instance restart.
     """
     global pipeline, is_processing
     
     if pipeline is None:
         raise HTTPException(status_code=500, detail="Pipeline not initialized")
+    
+    # Force clear the processing lock if requested
+    if force and is_processing:
+        logger.warning("Force clearing processing lock (force=True)")
+        is_processing = False
     
     if is_processing:
         return {
@@ -139,18 +146,23 @@ async def process_files(background: bool = False, reset: bool = False):
                 "background": True
             }
         else:
-            # Synchronous processing (for short files)
-            processed_count = pipeline.run_all()
-            
-            logger.info(f"Processed {processed_count} file(s)")
-            
-            return {
-                "status": "success",
-                "files_processed": processed_count,
-                "message": f"Processed {processed_count} file(s)"
-            }
+            # Synchronous processing - properly track state
+            is_processing = True
+            try:
+                processed_count = pipeline.run_all()
+                
+                logger.info(f"Processed {processed_count} file(s)")
+                
+                return {
+                    "status": "success",
+                    "files_processed": processed_count,
+                    "message": f"Processed {processed_count} file(s)"
+                }
+            finally:
+                is_processing = False
         
     except Exception as e:
+        is_processing = False  # Ensure lock is cleared on error
         logger.error(f"Processing error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
