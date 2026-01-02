@@ -490,6 +490,104 @@ async def renew_webhook_handler():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/move")
+async def move_file_to_processed(filename: str):
+    """
+    Manually move a file from inbox to processed folder.
+    Useful for files that were processed but not moved due to pipeline errors.
+    
+    Args:
+        filename: The filename to move (e.g., "Alinta Coffee Chat.wav")
+    """
+    from src.config import Config
+    from src.core.monitor import GoogleDriveMonitor
+    
+    try:
+        # Initialize Google Drive client
+        gdrive = GoogleDriveMonitor(
+            credentials_file=Config.GOOGLE_CREDENTIALS_FILE,
+            folder_id=Config.GOOGLE_DRIVE_FOLDER_ID
+        )
+        
+        # Find the file by name
+        inbox_folder_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID', '').strip()
+        processed_folder_id = os.getenv('GOOGLE_DRIVE_PROCESSED_FOLDER_ID', '').strip()
+        
+        if not processed_folder_id:
+            raise HTTPException(status_code=500, detail="GOOGLE_DRIVE_PROCESSED_FOLDER_ID not configured")
+        
+        # Search for the file
+        query = f"name='{filename}' and '{inbox_folder_id}' in parents and trashed=false"
+        results = gdrive.service.files().list(
+            q=query,
+            fields="files(id, name, parents)"
+        ).execute()
+        
+        files = results.get('files', [])
+        if not files:
+            return {
+                "status": "not_found",
+                "message": f"File '{filename}' not found in inbox folder"
+            }
+        
+        file_info = files[0]
+        file_id = file_info['id']
+        current_parents = file_info.get('parents', [])
+        
+        # Move to processed folder
+        gdrive.service.files().update(
+            fileId=file_id,
+            addParents=processed_folder_id,
+            removeParents=current_parents[0] if current_parents else None,
+            fields='id, parents'
+        ).execute()
+        
+        logger.info(f"Manually moved file: {filename}")
+        
+        return {
+            "status": "success",
+            "message": f"Moved '{filename}' to Processed folder",
+            "file_id": file_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Move error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/files")
+async def list_inbox_files():
+    """
+    List all files in the inbox folder.
+    """
+    from src.config import Config
+    from src.core.monitor import GoogleDriveMonitor
+    
+    try:
+        gdrive = GoogleDriveMonitor(
+            credentials_file=Config.GOOGLE_CREDENTIALS_FILE,
+            folder_id=Config.GOOGLE_DRIVE_FOLDER_ID
+        )
+        
+        # Get all audio files
+        files = gdrive.list_audio_files()
+        
+        return {
+            "status": "success",
+            "count": len(files),
+            "files": [
+                {"name": f.get('name'), "id": f.get('id'), "size": f.get('size')}
+                for f in files
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"List files error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))

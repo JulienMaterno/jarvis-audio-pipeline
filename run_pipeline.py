@@ -181,6 +181,17 @@ class AudioPipeline:
                 source_file=file_name
             )
             
+            # Even on error, try to move file if we have a transcript saved
+            # This prevents re-processing files that failed at analysis stage
+            try:
+                transcribe_result = context.get('task_results', {}).get('transcribe_audio', {})
+                if transcribe_result.get('text'):
+                    logger.info("Transcript exists - attempting to move file despite error")
+                    move_to_processed(context)
+                    logger.info("  ✓ Moved file to processed (despite analysis error)")
+            except Exception as move_err:
+                logger.warning(f"Could not move file after error: {move_err}")
+            
             # Try to cleanup even on error
             try:
                 cleanup_temp_files(context)
