@@ -459,7 +459,7 @@ async def get_queue_status():
             folder_id=Config.GOOGLE_DRIVE_FOLDER_ID
         )
         
-        pending_files = gdrive.list_audio_files()
+        pending_files = gdrive.list_audio_files(supported_formats=Config.SUPPORTED_FORMATS)
         
         status = {
             "status": "processing" if is_processing else "idle",
@@ -639,8 +639,8 @@ async def list_inbox_files():
             folder_id=Config.GOOGLE_DRIVE_FOLDER_ID
         )
         
-        # Get all audio files
-        files = gdrive.list_audio_files()
+        # Get all audio files with supported formats
+        files = gdrive.list_audio_files(supported_formats=Config.SUPPORTED_FORMATS)
         
         return {
             "status": "success",
