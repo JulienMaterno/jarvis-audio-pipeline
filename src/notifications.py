@@ -1,6 +1,10 @@
 """
 Telegram notifications for the audio pipeline.
 Sends processing reports similar to direct upload feedback.
+
+Environment variables:
+- TELEGRAM_BOT_URL: URL of the Telegram bot service
+- TELEGRAM_CHAT_ID: Default chat ID for notifications
 """
 
 import os
