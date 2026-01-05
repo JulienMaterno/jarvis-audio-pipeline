@@ -52,6 +52,7 @@ is_processing = False
 current_file_name = None
 queue_count = 0
 processing_started_at = None
+_stop_requested = False  # Emergency stop flag
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -71,10 +72,15 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 def run_pipeline_sync():
     """Run pipeline synchronously (for background thread)."""
-    global pipeline, is_processing, current_file_name, queue_count, processing_started_at
+    global pipeline, is_processing, current_file_name, queue_count, processing_started_at, _stop_requested
     import time
     
     try:
+        # Check if stop was requested before starting
+        if _stop_requested:
+            logger.warning("Pipeline start aborted - stop flag is set")
+            return 0
+        
         is_processing = True
         processing_started_at = time.time()
         logger.info("Background processing started")
@@ -133,6 +139,52 @@ async def health_check():
     return {
         "status": "healthy",
         "processing": is_processing
+    }
+
+
+@app.post("/stop")
+async def stop_processing():
+    """
+    EMERGENCY STOP - Halt any running processing immediately.
+    
+    This will:
+    - Clear the processing lock
+    - Signal background tasks to stop (via global flag)
+    - Clear the queue count
+    """
+    global is_processing, current_file_name, queue_count, processing_started_at, _stop_requested
+    
+    was_processing = is_processing
+    
+    # Set stop flag for background tasks to check
+    _stop_requested = True
+    
+    # Clear all state
+    is_processing = False
+    current_file_name = None
+    queue_count = 0
+    processing_started_at = None
+    
+    logger.warning("EMERGENCY STOP activated - processing halted")
+    
+    return {
+        "status": "stopped",
+        "was_processing": was_processing,
+        "message": "Emergency stop activated. All processing halted."
+    }
+
+
+@app.post("/resume")
+async def resume_processing():
+    """Clear the stop flag and allow processing to resume."""
+    global _stop_requested
+    
+    _stop_requested = False
+    logger.info("Processing resumed - stop flag cleared")
+    
+    return {
+        "status": "resumed",
+        "message": "Stop flag cleared. Processing can now resume."
     }
 
 
