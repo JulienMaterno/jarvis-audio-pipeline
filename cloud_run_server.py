@@ -32,8 +32,11 @@ logging.getLogger('anthropic').setLevel(logging.WARNING)
 # Global pipeline instance
 pipeline = None
 
+# Configuration - allow override via environment variables
+MAX_BACKGROUND_WORKERS = int(os.getenv('MAX_BACKGROUND_WORKERS', '2'))
+
 # Thread pool for background processing
-executor = ThreadPoolExecutor(max_workers=2)
+executor = ThreadPoolExecutor(max_workers=MAX_BACKGROUND_WORKERS)
 
 # Track processing state
 processing_lock = asyncio.Lock()
