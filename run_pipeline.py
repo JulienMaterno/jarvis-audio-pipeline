@@ -241,8 +241,8 @@ class AudioPipeline:
             # Try to cleanup even on error
             try:
                 cleanup_temp_files(context)
-            except:
-                pass
+            except Exception:
+                pass  # Cleanup is best-effort
             
             return False
     
@@ -375,8 +375,8 @@ class AudioPipeline:
             # Try to cleanup even on error
             try:
                 cleanup_temp_files(context)
-            except:
-                pass
+            except Exception:
+                pass  # Cleanup is best-effort
             
             return {
                 'success': False,

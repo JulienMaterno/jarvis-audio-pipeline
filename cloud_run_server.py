@@ -12,8 +12,10 @@ import hmac
 import hashlib
 import asyncio
 import tempfile
+import uuid
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Header, BackgroundTasks, UploadFile, File, Form
+from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -35,6 +37,12 @@ pipeline = None
 # Configuration - allow override via environment variables
 MAX_BACKGROUND_WORKERS = int(os.getenv('MAX_BACKGROUND_WORKERS', '2'))
 
+# Security: Expected webhook channel ID (must match setup_drive_webhook.py)
+WEBHOOK_CHANNEL_ID = os.getenv('WEBHOOK_CHANNEL_ID', 'jarvis-audio-pipeline-webhook')
+
+# Security: Optional internal API key for /process endpoint
+INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', '')
+
 # Thread pool for background processing
 executor = ThreadPoolExecutor(max_workers=MAX_BACKGROUND_WORKERS)
 
@@ -44,6 +52,21 @@ is_processing = False
 current_file_name = None
 queue_count = 0
 processing_started_at = None
+
+
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    """Middleware to add request ID tracing for distributed debugging."""
+    
+    async def dispatch(self, request: Request, call_next):
+        # Get or generate request ID
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4())[:8])
+        request.state.request_id = request_id
+        
+        # Process request
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        
+        return response
 
 
 def run_pipeline_sync():
@@ -94,6 +117,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Add request ID middleware for distributed tracing
+app.add_middleware(RequestIdMiddleware)
+
 
 @app.get("/")
 async def root():
@@ -111,7 +137,12 @@ async def health_check():
 
 
 @app.post("/process")
-async def process_files(background: bool = False, reset: bool = False, force: bool = False):
+async def process_files(
+    background: bool = False, 
+    reset: bool = False, 
+    force: bool = False,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key")
+):
     """
     Process all available audio files in Google Drive.
     Called by Cloud Scheduler every 5 minutes.
@@ -122,11 +153,18 @@ async def process_files(background: bool = False, reset: bool = False, force: bo
         reset: If True, clear the processed files cache to force reprocessing.
         force: If True, clear the processing lock even if processing flag is set.
                Use this to recover from stuck state after instance restart.
+    
+    Security: Optional X-API-Key header validation (if INTERNAL_API_KEY is set).
     """
     global pipeline, is_processing
     
     if pipeline is None:
         raise HTTPException(status_code=500, detail="Pipeline not initialized")
+    
+    # Validate API key if configured
+    if INTERNAL_API_KEY and x_api_key != INTERNAL_API_KEY:
+        logger.warning(f"Process request rejected: invalid or missing API key")
+        raise HTTPException(status_code=403, detail="Invalid API key")
     
     # Force clear the processing lock if requested
     if force and is_processing:
@@ -210,11 +248,14 @@ async def drive_webhook(
     x_goog_channel_id: Optional[str] = Header(None),
     x_goog_resource_state: Optional[str] = Header(None),
     x_goog_resource_id: Optional[str] = Header(None),
-    x_goog_message_number: Optional[str] = Header(None)
+    x_goog_message_number: Optional[str] = Header(None),
+    x_goog_channel_token: Optional[str] = Header(None)
 ):
     """
     Webhook endpoint for Google Drive push notifications.
     Triggered when a new file is added to the monitored folder.
+    
+    SECURITY: Validates X-Goog-Channel-ID matches our expected webhook channel.
     
     IMPORTANT: Returns immediately and processes in background.
     This prevents timeout issues with Google's webhook (10-30s timeout).
@@ -224,11 +265,17 @@ async def drive_webhook(
     - X-Goog-Resource-State: 'add', 'update', 'remove', 'trash', 'untrash', 'change'
     - X-Goog-Resource-ID: Google's resource identifier
     - X-Goog-Message-Number: Incremental message number
+    - X-Goog-Channel-Token: Optional token we set during watch creation
     """
     global pipeline, is_processing
     
     if pipeline is None:
         raise HTTPException(status_code=500, detail="Pipeline not initialized")
+    
+    # SECURITY: Validate the channel ID matches our expected webhook
+    if x_goog_channel_id != WEBHOOK_CHANNEL_ID:
+        logger.warning(f"Webhook rejected: invalid channel ID '{x_goog_channel_id}' (expected '{WEBHOOK_CHANNEL_ID}')")
+        raise HTTPException(status_code=403, detail="Invalid channel ID")
     
     # Log the notification
     logger.info(f"Drive webhook received: state={x_goog_resource_state}, channel={x_goog_channel_id}, msg={x_goog_message_number}")

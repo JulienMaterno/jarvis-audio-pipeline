@@ -45,7 +45,7 @@ def generate_new_filename(context: Dict[str, Any]) -> str:
             date_str = dt.strftime('%Y-%m-%d')
         else:
             date_str = datetime.now().strftime('%Y-%m-%d')
-    except:
+    except (ValueError, AttributeError):
         date_str = datetime.now().strftime('%Y-%m-%d')
     
     # Get category and title

@@ -76,7 +76,7 @@ def save_to_notion(context: Dict[str, Any]) -> Dict[str, Any]:
     if modified_time:
         try:
             file_date = datetime.fromisoformat(modified_time.replace('Z', '+00:00')).date().isoformat()
-        except:
+        except (ValueError, AttributeError):
             file_date = datetime.now().date().isoformat()
     else:
         file_date = datetime.now().date().isoformat()

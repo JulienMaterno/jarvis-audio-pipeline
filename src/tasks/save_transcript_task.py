@@ -82,7 +82,7 @@ def save_transcript(context: Dict[str, Any]) -> Dict[str, Any]:
                 date_str = dt.strftime('%Y-%m-%d')
             else:
                 date_str = datetime.now().strftime('%Y-%m-%d')
-        except:
+        except (ValueError, AttributeError):
             date_str = datetime.now().strftime('%Y-%m-%d')
         
         category = analysis.get('primary_category', 'recording')
