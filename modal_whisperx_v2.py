@@ -4,6 +4,11 @@ Jarvis Whisper on Modal - Serverless GPU Transcription (Optimized)
 Uses class-based approach to keep models loaded in memory.
 Models load ONCE on container start, then stay warm for fast inference.
 
+STEREO CHANNEL SUPPORT:
+- Left channel = User's voice (mic)
+- Right channel = Other person's voice (loopback/system audio)
+- Automatic speaker labeling based on channel
+
 Deploy: python -m modal deploy modal_whisperx_v2.py
 Test:   python -m modal run modal_whisperx_v2.py --audio-path test.mp3
 
@@ -131,6 +136,9 @@ class WhisperTranscriber:
         filename: str = "audio.mp3",
         language: str = None,
         enable_diarization: bool = True,
+        stereo_mode: str = "auto",  # "auto", "separate_channels", "merge"
+        left_speaker: str = "Aaron",  # Name for left channel speaker (mic = user)
+        right_speaker: str = "Other Person",  # Name for right channel speaker (loopback)
     ) -> dict:
         """
         Transcribe audio with pre-loaded models (FAST!).
@@ -139,7 +147,13 @@ class WhisperTranscriber:
             audio_bytes: Raw audio file bytes
             filename: Original filename (for format detection)
             language: Language code or None for auto-detect
-            enable_diarization: Enable speaker diarization
+            enable_diarization: Enable speaker diarization (for mono audio)
+            stereo_mode: How to handle stereo audio:
+                - "auto": Detect stereo, use channels if found
+                - "separate_channels": Force channel-based speaker ID
+                - "merge": Mix to mono (old behavior)
+            left_speaker: Name for left channel (default: "User")
+            right_speaker: Name for right channel (default: "Other Person")
         
         Returns:
             Dict with text, segments, language, duration, speakers
@@ -148,6 +162,7 @@ class WhisperTranscriber:
         import time
         import torch
         import librosa
+        import numpy as np
         from pydub import AudioSegment
         
         start_time = time.time()
@@ -158,108 +173,202 @@ class WhisperTranscriber:
             f.write(audio_bytes)
             temp_audio_path = f.name
         
-        # Convert to WAV for compatibility
-        wav_path = temp_audio_path.rsplit(".", 1)[0] + ".wav"
-        try:
-            print(f"Converting {suffix} to WAV...")
-            audio_segment = AudioSegment.from_file(temp_audio_path)
-            audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
-            audio_segment.export(wav_path, format="wav")
-            audio_path = wav_path
-        except Exception as e:
-            print(f"Conversion failed ({e}), using original...")
-            audio_path = temp_audio_path
-            wav_path = None
+        wav_path = None
+        left_wav = None
+        right_wav = None
         
         try:
-            # Get duration
-            audio_array, sr = librosa.load(audio_path, sr=16000)
-            duration = len(audio_array) / sr
-            print(f"Audio: {duration:.1f}s")
+            # Load audio and check channels
+            print(f"Loading audio: {filename}")
+            audio_segment = AudioSegment.from_file(temp_audio_path)
+            original_channels = audio_segment.channels
+            duration = len(audio_segment) / 1000.0  # Duration in seconds
             
-            # Transcribe (model already loaded!)
-            print("Transcribing...")
-            transcribe_start = time.time()
+            print(f"Audio: {duration:.1f}s, {original_channels} channel(s), {audio_segment.frame_rate}Hz")
             
-            generate_kwargs = {"task": "transcribe", "return_timestamps": True}
-            if language:
-                generate_kwargs["language"] = language
-            
-            result = self.whisper_pipe(
-                audio_path,
-                generate_kwargs=generate_kwargs,
-                chunk_length_s=30,
-                batch_size=16,  # Higher batch size for faster processing
+            # Decide processing mode
+            use_stereo_separation = (
+                original_channels == 2 and 
+                stereo_mode in ("auto", "separate_channels")
             )
             
-            transcribe_time = time.time() - transcribe_start
-            print(f"Transcription: {transcribe_time:.1f}s ({duration/transcribe_time:.1f}x realtime)")
-            
-            # Extract segments
-            full_text = result["text"]
-            chunks = result.get("chunks", [])
-            
-            segments_list = []
-            for chunk in chunks:
-                timestamp = chunk.get("timestamp", (0, 0))
-                segments_list.append({
-                    "start": timestamp[0] if timestamp[0] is not None else 0,
-                    "end": timestamp[1] if timestamp[1] is not None else 0,
-                    "text": chunk.get("text", "").strip(),
-                    "speaker": "Unknown"
-                })
-            
-            if not segments_list:
-                segments_list = [{
-                    "start": 0,
-                    "end": duration,
-                    "text": full_text.strip(),
-                    "speaker": "Unknown"
-                }]
-            
-            # Diarization (model already loaded!)
-            speakers = []
-            if enable_diarization and self.diarize_pipeline and segments_list:
-                print("Diarizing...")
-                diarize_start = time.time()
+            if use_stereo_separation:
+                print("🎧 STEREO MODE: Separating channels for speaker identification")
+                print(f"   Left channel → {left_speaker}")
+                print(f"   Right channel → {right_speaker}")
                 
-                try:
-                    diarization = self.diarize_pipeline(audio_path)
-                    
-                    for seg in segments_list:
-                        seg_mid = (seg["start"] + seg["end"]) / 2
-                        for turn, _, speaker in diarization.itertracks(yield_label=True):
-                            if turn.start <= seg_mid <= turn.end:
-                                seg["speaker"] = speaker
-                                break
-                    
-                    speakers = list(set(seg["speaker"] for seg in segments_list if seg["speaker"] != "Unknown"))
-                    diarize_time = time.time() - diarize_start
-                    print(f"Diarization: {diarize_time:.1f}s - {len(speakers)} speaker(s)")
-                except Exception as e:
-                    print(f"Diarization failed: {e}")
+                # Split stereo into separate mono channels
+                channels = audio_segment.split_to_mono()
+                left_channel = channels[0].set_frame_rate(16000)
+                right_channel = channels[1].set_frame_rate(16000)
+                
+                # Check which channels have audio
+                left_rms = left_channel.rms
+                right_rms = right_channel.rms
+                print(f"   Left RMS: {left_rms}, Right RMS: {right_rms}")
+                
+                # Export channels to temp files
+                left_wav = temp_audio_path.rsplit(".", 1)[0] + "_left.wav"
+                right_wav = temp_audio_path.rsplit(".", 1)[0] + "_right.wav"
+                left_channel.export(left_wav, format="wav")
+                right_channel.export(right_wav, format="wav")
+                
+                # Transcribe each channel
+                segments_list = []
+                
+                # Transcribe left channel (User)
+                # RMS threshold: 10 is very quiet (silence ~0-5), speech typically 20-1000+
+                if left_rms > 10:  # Only if there's audio (lowered from 100)
+                    print(f"Transcribing left channel ({left_speaker})...")
+                    left_result = self._transcribe_mono(left_wav, language)
+                    for seg in left_result.get("segments", []):
+                        seg["speaker"] = left_speaker
+                        seg["channel"] = "left"
+                        segments_list.append(seg)
+                else:
+                    print(f"Skipping left channel - too quiet (RMS={left_rms})")
+                
+                # Transcribe right channel (Other Person)
+                if right_rms > 10:  # Only if there's audio (lowered from 100)
+                    print(f"Transcribing right channel ({right_speaker})...")
+                    right_result = self._transcribe_mono(right_wav, language)
+                    for seg in right_result.get("segments", []):
+                        seg["speaker"] = right_speaker
+                        seg["channel"] = "right"
+                        segments_list.append(seg)
+                else:
+                    print(f"Skipping right channel - too quiet (RMS={right_rms})")
+                
+                # Sort all segments by start time
+                segments_list.sort(key=lambda x: x["start"])
+                
+                # Build full text with speaker labels
+                full_text_parts = []
+                current_speaker = None
+                for seg in segments_list:
+                    if seg["speaker"] != current_speaker:
+                        current_speaker = seg["speaker"]
+                        full_text_parts.append(f"\n[{current_speaker}]: ")
+                    full_text_parts.append(seg["text"].strip() + " ")
+                
+                full_text = "".join(full_text_parts).strip()
+                speakers = [left_speaker, right_speaker] if (left_rms > 10 and right_rms > 10) else \
+                           [left_speaker] if left_rms > 10 else [right_speaker] if right_rms > 10 else []
+                
+                processing_time = time.time() - start_time
+                
+                return {
+                    "text": full_text,
+                    "segments": segments_list,
+                    "language": "auto",
+                    "duration": duration,
+                    "speakers": speakers,
+                    "model": "openai/whisper-large-v3",
+                    "processing_time": processing_time,
+                    "stereo_mode": "separate_channels",
+                    "channel_mapping": {
+                        "left": left_speaker,
+                        "right": right_speaker
+                    }
+                }
             
-            processing_time = time.time() - start_time
-            speed = duration / processing_time if processing_time > 0 else 0
-            
-            print(f"✓ Complete: {duration:.1f}s audio in {processing_time:.1f}s ({speed:.1f}x realtime)")
-            
-            return {
-                "text": full_text.strip(),
-                "segments": segments_list,
-                "language": "auto",
-                "duration": duration,
-                "speakers": speakers,
-                "model": "openai/whisper-large-v3",
-                "processing_time": processing_time,
-                "transcribe_time": transcribe_time,
-            }
-            
+            else:
+                # Standard mono processing (original behavior)
+                print("Processing as mono audio...")
+                wav_path = temp_audio_path.rsplit(".", 1)[0] + ".wav"
+                audio_segment = audio_segment.set_frame_rate(16000).set_channels(1)
+                audio_segment.export(wav_path, format="wav")
+                
+                result = self._transcribe_mono(wav_path, language)
+                
+                # Run diarization on mono audio if enabled
+                if enable_diarization and self.diarize_pipeline and result.get("segments"):
+                    print("Diarizing...")
+                    try:
+                        diarization = self.diarize_pipeline(wav_path)
+                        for seg in result["segments"]:
+                            seg_mid = (seg["start"] + seg["end"]) / 2
+                            for turn, _, speaker in diarization.itertracks(yield_label=True):
+                                if turn.start <= seg_mid <= turn.end:
+                                    seg["speaker"] = speaker
+                                    break
+                        result["speakers"] = list(set(
+                            seg["speaker"] for seg in result["segments"] 
+                            if seg.get("speaker") and seg["speaker"] != "Unknown"
+                        ))
+                    except Exception as e:
+                        print(f"Diarization failed: {e}")
+                
+                result["processing_time"] = time.time() - start_time
+                result["stereo_mode"] = "mono"
+                return result
+                
         finally:
-            if os.path.exists(temp_audio_path):
-                os.unlink(temp_audio_path)
-            if wav_path and os.path.exists(wav_path):
-                os.unlink(wav_path)
+            # Cleanup temp files
+            for path in [temp_audio_path, wav_path, left_wav, right_wav]:
+                if path and os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except:
+                        pass
+    
+    def _transcribe_mono(self, audio_path: str, language: str = None) -> dict:
+        """Transcribe a mono audio file."""
+        import time
+        import librosa
+        
+        # Get duration
+        audio_array, sr = librosa.load(audio_path, sr=16000)
+        duration = len(audio_array) / sr
+        
+        # Transcribe
+        transcribe_start = time.time()
+        
+        generate_kwargs = {"task": "transcribe", "return_timestamps": True}
+        if language:
+            generate_kwargs["language"] = language
+        
+        result = self.whisper_pipe(
+            audio_path,
+            generate_kwargs=generate_kwargs,
+            chunk_length_s=30,
+            batch_size=16,
+        )
+        
+        transcribe_time = time.time() - transcribe_start
+        print(f"  Transcribed {duration:.1f}s in {transcribe_time:.1f}s ({duration/transcribe_time:.1f}x realtime)")
+        
+        # Extract segments
+        full_text = result["text"]
+        chunks = result.get("chunks", [])
+        
+        segments_list = []
+        for chunk in chunks:
+            timestamp = chunk.get("timestamp", (0, 0))
+            segments_list.append({
+                "start": timestamp[0] if timestamp[0] is not None else 0,
+                "end": timestamp[1] if timestamp[1] is not None else 0,
+                "text": chunk.get("text", "").strip(),
+                "speaker": "Unknown"
+            })
+        
+        if not segments_list:
+            segments_list = [{
+                "start": 0,
+                "end": duration,
+                "text": full_text.strip(),
+                "speaker": "Unknown"
+            }]
+        
+        return {
+            "text": full_text.strip(),
+            "segments": segments_list,
+            "language": "auto",
+            "duration": duration,
+            "speakers": [],
+            "model": "openai/whisper-large-v3",
+            "transcribe_time": transcribe_time,
+        }
     
     @modal.method()
     def health(self) -> dict:
@@ -308,7 +417,13 @@ def transcribe_audio(
 )
 @modal.fastapi_endpoint(method="POST")
 def transcribe_endpoint(item: dict) -> dict:
-    """HTTP endpoint for transcription."""
+    """
+    HTTP endpoint for transcription.
+    
+    Supports stereo audio with channel-based speaker identification:
+    - Left channel = User (from mic)
+    - Right channel = Other Person (from system audio/loopback)
+    """
     import base64
     
     audio_base64 = item.get("audio_base64")
@@ -322,6 +437,9 @@ def transcribe_endpoint(item: dict) -> dict:
         filename=item.get("filename", "audio.mp3"),
         language=item.get("language"),
         enable_diarization=item.get("enable_diarization", True),
+        stereo_mode=item.get("stereo_mode", "auto"),
+        left_speaker=item.get("left_speaker", "Aaron"),
+        right_speaker=item.get("right_speaker", "Other Person"),
     )
 
 
