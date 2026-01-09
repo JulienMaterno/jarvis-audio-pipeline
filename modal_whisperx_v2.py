@@ -216,28 +216,41 @@ class WhisperTranscriber:
                 # Transcribe each channel
                 segments_list = []
                 
+                # RMS threshold: Use very low threshold (3) to not miss quiet speech
+                # Silence is typically RMS ~0-2, even whispered speech is RMS 5+
+                # If BOTH channels are below threshold, still try left (user's mic)
+                RMS_THRESHOLD = 3
+                
+                # Determine which channels to transcribe
+                transcribe_left = left_rms > RMS_THRESHOLD
+                transcribe_right = right_rms > RMS_THRESHOLD
+                
+                # If neither channel meets threshold but left has any audio, transcribe it anyway
+                if not transcribe_left and not transcribe_right and left_rms > 0:
+                    print(f"Both channels very quiet (L={left_rms}, R={right_rms}), forcing left channel transcription")
+                    transcribe_left = True
+                
                 # Transcribe left channel (User)
-                # RMS threshold: 10 is very quiet (silence ~0-5), speech typically 20-1000+
-                if left_rms > 10:  # Only if there's audio (lowered from 100)
-                    print(f"Transcribing left channel ({left_speaker})...")
+                if transcribe_left:
+                    print(f"Transcribing left channel ({left_speaker}), RMS={left_rms}...")
                     left_result = self._transcribe_mono(left_wav, language)
                     for seg in left_result.get("segments", []):
                         seg["speaker"] = left_speaker
                         seg["channel"] = "left"
                         segments_list.append(seg)
                 else:
-                    print(f"Skipping left channel - too quiet (RMS={left_rms})")
+                    print(f"Skipping left channel - no audio (RMS={left_rms})")
                 
                 # Transcribe right channel (Other Person)
-                if right_rms > 10:  # Only if there's audio (lowered from 100)
-                    print(f"Transcribing right channel ({right_speaker})...")
+                if transcribe_right:
+                    print(f"Transcribing right channel ({right_speaker}), RMS={right_rms}...")
                     right_result = self._transcribe_mono(right_wav, language)
                     for seg in right_result.get("segments", []):
                         seg["speaker"] = right_speaker
                         seg["channel"] = "right"
                         segments_list.append(seg)
                 else:
-                    print(f"Skipping right channel - too quiet (RMS={right_rms})")
+                    print(f"Skipping right channel - no audio (RMS={right_rms})")
                 
                 # Sort all segments by start time
                 segments_list.sort(key=lambda x: x["start"])
@@ -252,8 +265,12 @@ class WhisperTranscriber:
                     full_text_parts.append(seg["text"].strip() + " ")
                 
                 full_text = "".join(full_text_parts).strip()
-                speakers = [left_speaker, right_speaker] if (left_rms > 10 and right_rms > 10) else \
-                           [left_speaker] if left_rms > 10 else [right_speaker] if right_rms > 10 else []
+                # Build speakers list based on what was actually transcribed
+                speakers = []
+                if transcribe_left:
+                    speakers.append(left_speaker)
+                if transcribe_right:
+                    speakers.append(right_speaker)
                 
                 processing_time = time.time() - start_time
                 
