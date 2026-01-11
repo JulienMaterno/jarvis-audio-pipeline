@@ -88,7 +88,7 @@ curl -X POST https://jarvis-audio-pipeline-xxx.run.app/process
 ### `POST /process/upload`
 **Primary endpoint for Telegram bot.** Process an uploaded audio file directly.
 ```bash
-curl -X POST -F "file=@voice_memo.ogg" -F "username=bertan" \
+curl -X POST -F "file=@voice_memo.ogg" -F "username=aaron" \
   https://jarvis-audio-pipeline-xxx.run.app/process/upload
 ```
 **Response:**

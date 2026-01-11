@@ -137,7 +137,10 @@ class ModalBackend(TranscriptionBackend):
         self,
         audio_path: Path,
         language: Optional[str],
-        enable_diarization: bool
+        enable_diarization: bool,
+        stereo_mode: str = "auto",
+        left_speaker: str = "Aaron",
+        right_speaker: str = "Other Person",
     ) -> dict:
         """Transcribe using Modal SDK."""
         audio_bytes = audio_path.read_bytes()
@@ -149,13 +152,19 @@ class ModalBackend(TranscriptionBackend):
             filename=audio_path.name,
             language=language,
             enable_diarization=enable_diarization,
+            stereo_mode=stereo_mode,
+            left_speaker=left_speaker,
+            right_speaker=right_speaker,
         )
     
     def _transcribe_via_http(
         self,
         audio_path: Path,
         language: Optional[str],
-        enable_diarization: bool
+        enable_diarization: bool,
+        stereo_mode: str = "auto",
+        left_speaker: str = "Aaron",
+        right_speaker: str = "Other Person",
     ) -> dict:
         """Transcribe using HTTP API endpoint."""
         import requests
@@ -167,6 +176,9 @@ class ModalBackend(TranscriptionBackend):
             "audio_base64": audio_base64,
             "filename": audio_path.name,
             "enable_diarization": enable_diarization,
+            "stereo_mode": stereo_mode,
+            "left_speaker": left_speaker,
+            "right_speaker": right_speaker,
         }
         if language:
             payload["language"] = language
@@ -188,9 +200,25 @@ class ModalBackend(TranscriptionBackend):
         self,
         audio_path: Path,
         language: Optional[str] = None,
-        enable_diarization: bool = True
+        enable_diarization: bool = True,
+        stereo_mode: str = "auto",
+        left_speaker: str = "Aaron",
+        right_speaker: str = "Other Person",
     ) -> TranscriptionResult:
-        """Transcribe audio using deployed Modal app."""
+        """
+        Transcribe audio using deployed Modal app.
+        
+        Args:
+            audio_path: Path to audio file
+            language: Language code or None for auto-detect
+            enable_diarization: Enable speaker diarization (for mono audio)
+            stereo_mode: How to handle stereo audio:
+                - "auto": Detect stereo, use channels if found
+                - "separate_channels": Force channel-based speaker ID
+                - "merge": Mix to mono (old behavior)
+            left_speaker: Name for left channel (from mic, typically User)
+            right_speaker: Name for right channel (from loopback, typically Other Person)
+        """
         if not self.is_available():
             raise BackendUnavailableError("Modal is not available")
         
@@ -202,10 +230,16 @@ class ModalBackend(TranscriptionBackend):
             # Use SDK or HTTP based on availability
             if self._use_sdk:
                 logger.debug("Using Modal SDK")
-                result = self._transcribe_via_sdk(audio_path, language, enable_diarization)
+                result = self._transcribe_via_sdk(
+                    audio_path, language, enable_diarization,
+                    stereo_mode, left_speaker, right_speaker
+                )
             else:
                 logger.debug("Using Modal HTTP API")
-                result = self._transcribe_via_http(audio_path, language, enable_diarization)
+                result = self._transcribe_via_http(
+                    audio_path, language, enable_diarization,
+                    stereo_mode, left_speaker, right_speaker
+                )
             
             processing_time = time.time() - start_time
             
@@ -219,6 +253,14 @@ class ModalBackend(TranscriptionBackend):
             mode = "SDK" if self._use_sdk else "HTTP"
             logger.info(f"Modal ({mode}) complete: {duration:.1f}s audio in {processing_time:.1f}s ({speed:.1f}x realtime)")
             
+            # Extract stereo info from result
+            stereo_mode_result = result.get('stereo_mode', 'mono')
+            channel_mapping = result.get('channel_mapping', {})
+            
+            # Log stereo detection
+            if stereo_mode_result == 'separate_channels':
+                logger.info(f"🎧 Stereo mode: {channel_mapping}")
+            
             return TranscriptionResult(
                 text=result['text'],
                 segments=result.get('segments', []),
@@ -228,6 +270,8 @@ class ModalBackend(TranscriptionBackend):
                 backend="modal",
                 model=result.get('model', self.model_name),
                 processing_time=processing_time,
+                stereo_mode=stereo_mode_result,
+                channel_mapping=channel_mapping,
             )
             
         except BackendUnavailableError:

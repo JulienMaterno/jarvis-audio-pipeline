@@ -22,6 +22,9 @@ class TranscriptionResult:
     backend: str = "unknown"
     model: str = "unknown"
     processing_time: float = 0.0
+    # Stereo channel info (when audio has separate channels for different speakers)
+    stereo_mode: str = "mono"  # "mono", "separate_channels"
+    channel_mapping: Dict[str, str] = field(default_factory=dict)  # {"left": "Aaron", "right": "Other Person"}
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for compatibility with existing code."""
@@ -33,7 +36,9 @@ class TranscriptionResult:
             'speakers': self.speakers,
             'backend': self.backend,
             'model': self.model,
-            'processing_time': self.processing_time
+            'processing_time': self.processing_time,
+            'stereo_mode': self.stereo_mode,
+            'channel_mapping': self.channel_mapping,
         }
 
 
